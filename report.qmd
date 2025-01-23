@@ -1,0 +1,209 @@
+---
+title: "Autonomous Lunar Rover Simulation through Reinforcement Learning"
+subtitle: "DSAN6650 Final Report"
+authors: 
+  - Shriya Chinthak
+  - Billy McGloin
+  - Kangheng Liu
+  - Jorge Bris Moreno
+  - Eric Dapkus
+date: "December 2024"
+bibliography: bibliography.bib
+format:
+  html:
+    embed-resources: true
+---
+
+
+## Introduction
+
+Advancing the frontiers of scientific discoveries within space requires innovative technologies and tools. Reinforcement learning (RL), a type of machine learning where an agent learns to make decisions based on its objective and environment, has the capacity to address the unique challenges of traversing and operating in extraterrestrial environments. 
+Through the guidance of Dr.Hickman, our team began to explore the field of RL in space exploration through an ongoing project at the National Aeronautics and Space Administration (NASA). In the coming years, NASA plans to explore the Moon through autonomous robotics within the Cooperative Autonomous Distributed Robotic Exploration (CADRE) program. Within this mission, three small rovers will traverse the moon’s landscape autonomously to map its surface, collect distributed measurements, and conduct various scientific experiments @nasaCADRE. Thus, the utilization of RL simulations can act as the technological backbone for autonomous traversal in space exploration. 
+With an understanding of what autonomous space exploration can look like in the future, we were also provided the technical foundation to explore such a topic via DSAN 6650: Geosearch. Through this assignment, a gridworld approach to simulation autonomous traversal via a robotic agent was implemented. Even while using a simple environment, Geosearch acted as a stepping stone to the objective and plan of our final project and its findings.
+
+### Statement of Purpose
+
+Thus, with both the background of autonomous space exploration through NASA’s upcoming mission and a foundation from Geosearch, this project combines the two to simulate a lunar rover that explores the lunar surface with its objective being to find and gather resources. The rover will have to navigate the lunar surface by avoiding obstacles and managing its energy consumption. The goal is to develop a simulation space that recreates the moon’s surface and train various RL algorithms such that the rover learns the environment and gathers various resources while controlling its battery and safety
+
+Please note that for this iteration of the project, we have made assumptions on the moon’s geography and the inner workings of the rover to simplify the problem. These assumptions are detailed in the following sections. The objective is to simplify the problem to check its feasibility and expand on it in future studies.
+
+## Environment
+
+The environment created is an attempt at simulating the intricacies and nuance of the moon’s surface. The implementation of this environment is a 35 by 35 grid-world, with each cell representing $1km^{2}$ of the lunar surface. The environment also includes integral components necessary to the rover’s exploration and resource-gathering tasks. Primarily, time steps structure progression through the environment while surface elevation and lunar dust emulate the uneven nature of the lunar space. Additionally, sunlight levels are simulated based on the lunar cycle in order to accurately depict the rover’s energy intake time and locations. Lastly, the rover will navigate the environment in the hopes to find a resource. For the purpose of this simulation, resources are broken down into water and gold, all of which will be discussed in greater detail to follow. 
+
+### Time Steps
+
+The simulated rover learns the environment and makes decisions at every time step. In order to depict the true nature of the moon’s cycle, each time step is equal to approximately 24 hours on Earth but proportional to 1 hour of Earth’s day-night cycle @noaaFrequencyTides. Within each time step, the rover can move a maximum of 1 kilometer. After movement, the rover collects and updates all necessary environment information such as sunlight levels, overall elevation, and resources to calculate battery expenditure and reward. The rover continues this process, with every 30 time steps defined as one month. Thus, a single day-night cycle on the moon is one month long. The rover completes an episode which is defined as the length of a lunar year or earlier if the rover ends up in a terminal state. While this is a simplified version of the lunar cycle, it provides a baseline foundation for the rover to navigate the environment while properly receiving sunlight as energy. 
+
+### Sunlight
+
+Sunlight plays a crucial role in this environment as it is the singular energy intake resource for the rover. To reproduce the sunlight’s intensity throughout a lunar day-night cycle, @eq-sunlight calculates the intensity of the sunlight on a dimensionless scale between 0 and 1 through a sinusoidal equation:
+
+$$
+sunlight = 0.5 * (1 + \sin(2 \times \pi \times (time\_fraction - 0.25))) \times height\_factor
+$$ {#eq-sunlight}
+
+This diurnal cycle of sunlight will produce a value of 0 at nightfall and 1 at the highest peak of sunlight intensity. The sunlight will also be slightly less intense at lower points of elevation. The sunlight value is used to calculate total energy intake at each time step, which will be discussed later on. The purpose of adding sunlight to the environment is to allow the rover to plan its actions with the intent to prioritize recharging during peak sunlight and avoiding high-energy tasks during low sunlight time steps.  
+
+### Surface Elevation
+
+The lunar surface consists of several points of inconsistent elevation and rough terrain. Therefore, to effectively simulate the lunar surface, we designed a terrain generation algorithm. Primarily, the base terrain is created based on random Gaussian noise, where every cell has an elevation based on the Gaussian value. Then, a Gaussian filter is applied to smooth the terrain and blend neighboring elevation values. A random walk algorithm is used to create mountain ranges in the environment as well as cliff points on the edges of the mountains. Lastly, craters were added based on set radius and crater depth. The terrain was again smoothed out using a Gaussian filter and normalized such that all surface elevation is between the range -50 to 50 meters. This surface aims to recreate the lunar surface as closely as possible with the restrictions of our current grid size.
+
+### Lunar Dust
+
+Another contributing factor to the overall elevation of the lunar surface is lunar dust. However, unlike on Earth, dust behaves in erratic ways, changing by even the smallest amounts of activity @nasaDust. Thus, to simulate the randomness of the lunar dust, we implemented an algorithm to calculate and map the dust levels onto the terrain. Primarily, we generated a base noise level for each cell in the grid through Python’s `noise` package. Similar to the surface elevation, we used a Gaussian filter to smooth out the edges of the dust patches to avoid extreme differences in height. The values are then normalized on a scale of 0 to 1 meters and inverted such that lower areas (bottoms of cliffs, bottoms of craters) receive higher dust accumulation (this is also dependent on a `dust_height_correlation` parameter). The final dust map for the environment is calculated in @eq-dust, where the logic for lower areas is implemented through a `height_influence` variable.
+
+$$
+\begin{aligned}
+\text{final\_dust} = &\ (\text{dust\_height\_correlation} \times \text{height\_influence}) \\
+&+ ((1 - \text{dust\_height\_correlation}) \times \text{dust\_map})
+\end{aligned}
+$$ {#eq-dust}
+
+Lastly, the final dust map is normalized a second time to be a range of 0 to 0.5 meters for a more accurate height of lunar dust on the moon’s surface. Both surface elevation and lunar dust provide detailed depictions for the simulation model as well as contribute to a more realistic depiction of the rover’s energy usage as it traverses for resources. 
+
+### Resources
+
+Taking a closer look at NASA’s plans for the CADRE project, their trio of rovers are built with sensors and ground-penetrating radar, able to detect resources below the surface that scientists may be unable to view through satellite imagery @nasaCADRE. Thus, our rover’s mission will also be to traverse the environment for resources, with the added ability to gather said resources. For the purposes of this simulation, the two resource groups a rover could land on are water and gold, however, further iterations of this experiment would include more realistic resources and probability maps of the moon. 
+
+#### Water
+
+In both resource scenarios, the rover does not initially know where any of the resources are located. Thus, the rover is provided a probability distribution for both water and gold. Specifically for water, the probability distribution is of Gaussian nature, where the center of these water pools @fig-env are randomized per episode. For every water resource, the Gaussian distribution is shaped through a covariance matrix, controlling both its spread and orientation. Additionally, to better simulate the unknown, we added a noise scale to the Gaussian values as means of providing randomness to the resource pools. To finalize the probability map, values under 0.15 are zeroed out and re-normalized to target potential resource regions of the map. We also clear out resource probabilities in the landing zone (center of the grid). 
+
+The ground truth of each episode is calculated with the probability map in mind. Using the probability map, the ground truth of water pools is calculated by converting probability values into binary values and adding additional noise and thresholding. Thus, with every gathering step, the rover detects whether or not it has hit a resource and updates the probability map through its immediate neighbors. 
+
+#### Gold
+
+The calculation for the gold resource probabilities are slightly different to the water pools. Rather than pools of gold, the gold can be found in vein-like shapes across the environment @fig-env. These veins are calculated by randomizing a starting location and direction of growth and mapping the resource in the specified direction with conditions to ensure a minimum resource amount and length. After calculating this probability map, the rest of the process mirrors that of the water calculation. The landing area is again cleared to avoid the rover immediately landing on a resource. Lastly, the ground truth is calculated utilizing the probability map, adding noise and thresholding, and converting to binary values. It is important to note that for both water and gold, there is also a component of the implementation that ensures neither are overlapping each other within the environment. 
+
+Thus, our environment is calculated to address a robust simulation of the lunar space, its randomness and hurdles for the rover, and the unknown nature of available resources underground. Next, we seek to simulate a lunar rover’s abilities to traverse the environment and learn to balance exploration and gather while prioritizing its conservation of energy.
+
+<div style="text-align:center">
+  ![Environment Visualization using PyGame](images/env_plot.png){width=50% #fig-env}
+</div>
+
+## Rover (Agent)
+
+The lunar rovers in the CADRE mission will be fully autonomous robots that are able to traverse the landscape and complete a variety of tasks. Thus, for the purposes of this simulation, the singular rover acts as the RL agent that will learn the environment over the course of an extensive episodic training process. The rover takes in information regarding the environment, as stated previously, and calculates the energy consumed and generated. This energy is in watt-hour (Wh) units for measuring total battery usage.
+
+### Battery
+
+Within our simulation, the rover contains two batteries, the same size as the Apollo Lunar Roving Vehicle (LRV) at a capacity of 29,300 Wh each, making it a total of 58,600 Wh. With the battery capacity grounded in reality, this iteration of the simulation will have a logical input and output of energy that the rover will observe. 
+
+#### Input
+
+As previously denoted, the main source of energy coming into the rover is through sunlight. The rover, which we are modeling after Apollo LRV, contains three solar panels. These panels convert sunlight into Wh units, where the maximum amount of energy produced in a day with maximum sunlight is 6,532.8 Wh. Taking the product of the daily output with the sunlight intensity weight produces the correct generated energy for that time step (@eq-daily-energy, @eq-generated_en). 
+
+$$
+\text{Daily Output} = 272.2 \times 24 \times \text{num\_solar\_panels}
+$$ {#eq-daily-energy}
+
+$$
+\begin{align}
+\text{Energy Generated} &= \text{Daily Output} \times \text{Sunlight Intensity} 
+\end{align}
+$$ {#eq-generated_en}
+
+#### Output
+
+Energy consumed by the rover is based on a multitude of factors. First, for every time step the rover uses a base consumption of 1,200 Wh for its systems and connectivity. For any action that is not staying still, the rover consumes 13,890 Wh per kilometer @Chandrayaan2. To this value, we multiply the calculated dust and height factor (@eq-dust-factor, @eq-height-factor, @eq-movement), which increases energy consumption to account for greater energy exertion in large elevation deltas. Lastly, if the rover chooses to gather a resource, it will automatically consume an additional 20,000 Wh. Thus, after calculating the energy consumed, the formula for the battery percentage at the next time step is the current battery level plus the energy generated minus the energy consumed (@eq-bat). 
+
+$$
+\begin{align}
+\text{Dust Factor} &= 1 + (\text{Dust Level} \times 0.5)
+\end{align}
+$$ {#eq-dust-factor}
+
+$$
+\begin{align}
+\text{Height Factor} &= 0.5 + \frac{100}{\text{Height Difference}} 
+\end{align}
+$$ {#eq-height-factor}
+
+$$
+\begin{align}
+\text{Movement Energy} &= 13,890 \times \text{Dust Factor} \times \text{Height Factor} 
+\end{align}
+$$ {#eq-movement}
+
+$$
+\begin{align}
+\text{Next Battery Level} &= \text{Current Battery Level} + \nonumber \\ 
+& \text{Energy Generated} - \text{Energy Consumed} 
+\end{align}
+$$ {#eq-bat}
+
+
+### Terminal States
+
+There are many instances where a rover can terminate its run prematurely. To further enhance the rover’s ability to learn to avoid certain areas in the environment and account for random failures, we have defined the following terminal states. 
+
+#### Crash
+
+The rover has a probability of crashing when the change in height from one cell to the next is higher than 25 meters. This is to simulate when the rover has either fallen down a cliff and crashed or it has flipped over. If the rover crashes, it will be considered a terminal state where it will be inoperable for the remainder of the episode.
+
+#### Stuck
+
+As mentioned previously, the rover operates in a challenging environment where deep moon dust poses a significant hazard. Using a sigmoid probability function, the rover's chance of getting stuck increases dramatically as dust depth approaches 0.25 meters, reaching a maximum 50% probability at 0.5 meters depth. Once stuck, the rover continues consuming energy while unable to move. If the rover remains stuck for 5 consecutive days, the mission is considered a failure and reaches a terminal state. 
+
+#### Random Death
+
+To emulate cases of random or unexpected component failures, the rover has a sigmoidal probability of failing over the year/episode. The rover’s probability of failing increases each day, reaching a maximum probability of 5% at the end of the episode (day 365).
+
+## Action and Rewards
+
+### Action Space
+
+As we previously mentioned, the actions of the rover are significant to its energy consuming and traversal of the environment. When building off of the Geosearch assignment, we maintained the four cardinal directions for the rover: up, down, left, and right. In addition to the basic movements, we also implemented two new action steps. Staying still allows the rover to remain in the same cell as the previous action step to avoid consuming any energy. This is especially helpful during the dark time steps with no opportunities to absorb sunlight. Additionally, as we have previously mentioned, gathering is another new action that allows the rover to mine the area for potential resources. 
+
+### Reward Space
+
+An integral part of any RL problem is creating a coherent reward structure that incentives the agent to learn and complete its objectives effectively. Due to the intricate nature of this environment, there are several components to this reward structure. Our rover first starts off with a baseline of -1 reward for each step. For positive rewards, the rover receives a unique reward for gathering either water or gold times a delay factor in order to prevent over-mining at the same location. Additionally, the rover also receives a positive reward for making it through a month in order to incentivize longevity. However, for terminal states, as previously discussed, the rover receives hefty amounts of negative reward to avoid premature termination of an episode. Another negative reward implemented is for very low or very high battery levels to avoid the rover from either dying prematurely or staying too long in a high intensity sun spot. For more details on the amounts of each reward please refer to the table below.
+
+::: {#table-rewards}
+| **Scenario**                  | **Reward/Penalty**           | **Explanation**                                                                   |
+|-------------------------------|------------------------------|-----------------------------------------------------------------------------------|
+| Base Time Penalty             | \(-1\)                      | Penalizes every time step to encourage efficiency.                                |
+| Monthly Survival Bonus        | \(+100\)                    | Reward for surviving another month.                                              |
+| Stuck State Daily Penalty     | \(-30\)                     | Penalty for being unable to move.                                                |
+| Terminal Stuck Penalty        | \(-100,000\)                | Ending penalty if stuck for 5 consecutive days.                                  |
+| Crash Penalty                 | \(-100,000\)                | Penalty if the agent crashes due to height changes.                              |
+| Gathering Water (Base)        | \(+200 \times \text{decay}\)| Reward for collecting water, reduced by decay for repeated gathers.              |
+| Gathering Gold (Base)         | \(+300 \times \text{decay}\)| Reward for collecting gold, reduced by decay for repeated gathers.               |
+| Low Battery Penalty           | \(-20\)                     | Penalty if the battery level drops below \(20\%\).                               |
+| Overcharged Battery Penalty   | \(-15\)                     | Penalty if the battery exceeds \(95\%\).                                         |
+:::
+
+## Solvers
+
+The rover’s ability to navigate the environment and optimize its actions depends on reinforcement learning (RL) solvers. We implemented and evaluated three solvers—Proximal Policy Optimization (PPO), Rainbow DQN, and Soft Actor-Critic (SAC)—to test their effectiveness in this complex lunar environment.
+
+### PPO
+
+Proximal Policy Optimization (PPO) is an on-policy RL algorithm designed for stability and efficiency in learning. Its clipped objective function ensures controlled updates to the policy, making it less prone to erratic behavior during training. However, in our environment, PPO struggled to generalize and optimize the rover’s actions effectively. The rover frequently resorted to repeating the same actions, leading to inefficient exploration and minimal resource gathering. This outcome highlights the limitations of PPO in handling the highly stochastic and dynamic challenges of our lunar simulation.
+
+### Rainbow DQN
+
+Rainbow DQN, an advanced Deep Q-Network (DQN) variant, integrates multiple extensions, such as prioritized experience replay and double Q-learning, to improve stability and performance. As an off-policy method, Rainbow DQN excels in environments with discrete action spaces and rich reward structures. Despite its theoretical advantages, Rainbow DQN also underperformed in our environment, as the rover consistently favored a single action. This failure to explore and adapt suggests that the solver struggled with the complexity of the state space and reward dynamics, emphasizing the need for more training time or environment-specific customization.
+
+### SAC
+
+Soft Actor-Critic (SAC) is an off-policy method that optimizes a stochastic policy while maximizing a trade-off between expected reward and entropy. This approach encourages exploration and allows for a more robust understanding of the environment. Among the solvers tested, SAC demonstrated the most promising results, enabling the rover to navigate effectively and gather with strategic pauses between actions. SAC’s ability to balance exploration and exploitation proved particularly advantageous in our environment, where careful planning is critical for success.
+
+<video autoplay loop muted style="width:50%; display:block; margin:auto;">
+  <source src="policy_gifs/sac_policy1.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
+### Results and Insights
+
+The performance differences among these solvers illustrate the complexity of our lunar simulation. SAC’s relative success in navigating the environment and gathering underscores its suitability for problems requiring strategic decision-making under uncertainty. Conversely, the suboptimal performance of PPO and Rainbow DQN suggests that further training or solver customization may be necessary to address the intricate challenges posed by the environment. Future work could explore tailored solvers or additional modifications to improve performance, such as incorporating continuous action spaces, advanced noise modeling, or hierarchical RL architectures.
+
+## Concluding Remarks
+
+From emulating a lunar environment and rover to solving an autonomous traversal and resource acquisition problem, we can conclude that RL is essential in the continuation of scientific discoveries in space. In terms of our simulation, we can see that the SAC solver was the best in its performance and ability to navigate through the environment's obstacles and obtain resources. Going forward, we hope to build off this implementation for a more sophisticated simulation of lunar traversal. Examples include converting the action space to be continuous, expanding on the terrain, adding noise to sensor input, and using more robust solvers like dreamer V3. Thus, these advancements will bring us closer to developing intelligent systems capable of operating autonomously for space exploration.
+
+## References
+::: {#refs}
+:::
+

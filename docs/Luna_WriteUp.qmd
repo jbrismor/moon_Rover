@@ -1,0 +1,110 @@
+---
+title: "Lunar Rover"
+format:
+  html:
+    embed-resources: true
+    code-fold: true
+    toc: true
+---
+
+# luna_rover
+
+Authors: Shriya Chinthak, Jorge Bris Moreno, Billy McGloin, Eric Dapkus, Kangheng Liu .
+Supervisors: Dr. J. Hickman, Dr. Prabal Saxena.
+
+
+# Statement of problem
+
+This project aims to develop a simulation of a lunar rover exploring the lunar surface, with the objective of finding and gathering resources. The rover will have to navigate the lunar surface, avoiding obstacles, and managing its energy consumption. The goal is to develop a simulation space that recreates the moon surface with different types of resources, and train different RL algorithms to see if they would be able to control the rover to not only find the resources, but interact with the environment while controlling its battery and safety.
+
+**Note:** In this iteration of the project, some assumptions have been made to simplify the problem. These assumptions are detailed in the following sections. The objective is to simplify the problem to check its feasability, and expand it in the future.
+
+## Environment
+
+In this simulation, the environment is a 35 by 35 grid-world, with each cell representing 1km^2 of the lunar surface. The grid-world is inittialized with a set of spacial functions to recreate all the features of the lunar surface. These features are the following:
+
+### Surface elevation:
+
+The linar surface is initialized with a smoothed surface (using perlin noise) with a maximum height of -50m to 50m. This height would represent the mountain ranges and the craters in a smoothed way to represent a natural surface. Two cliffs are also added to the surface to make the environment more realistic and challenging. The cliffs have a height of $\pm$ 200m and are located in different parts of the grid-world.
+
+This surface aims to recreate the lunar surface as closely as possible with the restrictions of our current grid size.
+
+### Lunar Dust:
+
+The environment is also initialized with a layer of lunar dust that, unlike the surface elevation, it is initialized at each iteration of the simulation. This element adds stochasticity to our environment, a key element on making the problem realistic and suitable for Reinforcement Learning.
+
+The lunar dust, even though it is initialized randomly, it correlates with the surface elevation. Thus, there is more probability of having lunar dust in the craters and less probability in the mountain ranges. This dust directly affects the rover's energy consumtion and the probability of getting stuck. This probability is modeled with a sigmoidal function from 0 to 0.75, where the probability of getting stuck is 0.75 when the lunar dust is at its maximum and 0 when there is no lunar dust.
+
+### Time-steps:
+
+To work around our computational limitations while keeping the units as realistic as possible, we will consider each time-step as an Earth day (24h). This means that the rover will be able to move a maximum of 1km per day. This is a simplification of the problem, but it is a good starting point to check the feasibility of the project.
+
+### Sunlight:
+
+Since the moon day length is about 29.5 Earth days, we will round this to 30 days to correlate with the time-steps of our simulation. The amount of light is normalized and changes smoothly from 0 to 1 in 30 days. This will affect the rovers battery recharge and affect its interactions with the environment depending on the amount of light present, adding another layer of complexity to the problem.
+
+### Rover Specs:
+
+#### Battery capacity:
+
+This rover will have two batteries the same size as Apollo LRV, so each has a capacity of 29,300 W/h, making a total of 58,600 W/h. (cite). This specs can be furthered taylored in future iterations of the project.
+
+#### Solar Pannels (energy Input):
+
+The rover will have 2 solar pannels, which is common on lunar rovers operated by NASA. Some of the rovers have 3 solar pannerls, but due to our small environment and capabilities, we will only take into account 2 so that our units are as realistic as possible.
+
+On perfect conditions, a solar pannel of $1m^2$ in the moon, on optimal conditions, can generate 272.2 W/h (cite). Thus, as our simulation pretends that each time-step is 1 day, per time step, the input battery will be $272.2*24=6532.8W$ on optimal conditions. This input directly correlates with the amount of sunlight at the rover's time-step, meaning that when the environment gets the maximum amount of sunlight, the rover will get the maximum amount of energy, and viceversa.
+
+#### Energy consumption (energy output):
+
+To account for many scenarios, the energy consumption has the following three components:
+
+- Every day, the rover will consume 1,200 Wh to keep its systems and connectivity running.
+- Each timestep, on perfect conditions (no elevation change and no lunar dust), the rover will consume 13,890 Wh to move 1km. This is a simplification of the problem, but it goes of other NASA's lunar rover's specs.
+  - This energy consumption will be affected by the change of height. The height factor has been normalized from 0.5 to 1.5, where 0.5 is the maximum negative change in height the rover can handle and 1.5 is the maximum positive change. This factor will be multiplied by the energy consumption to move 1km.
+  - The energy consumption will also be affected by the amount of lunar dust. The lunar dust factor has been normalized from 1 to 1.5, where 1 is the minimum amount of lunar dust and 1.5 is the maximum. This factor will be multiplied by the energy consumption to move 1km.
+- Gathering resources will consume 20,000 Wh per resource gathered, as it will require the rover to use its robotic arm and other systems to gather the resource. While this factor may seem high, it is a simplification of the problem, and this specs could not be found in the literature. In future iterations of the project, we wish to have this factor taylored to the rover's specs.
+
+### Resources:
+
+The environment is initialized with two resources, water and gold. These resources are intialized with a probability of being found where we set them to be, but having some probability of being displaced from these locations. This concept will make the problem more challenging and realistic, as the rover will have to explore the environment to find the resources each time. It aims to pretend NASA's action of approximatelly knowing where their interest resources are, but not with a $100 \%$ certainty.
+
+### Terminal States:
+
+This simulation run for 300 time-steps, which is equivalent to 300 Earth-days. Due to the small size of the grid and our computational limitations, we believe this is a good starting point. However, the agent (the rover) can reach a terminal state before the 300 time-steps if it gets stuck, crashes, or suddenly dies due to a malfunction. These terminal states are defined as follows:
+
+- Getting stuck: As mentioned in the dust section, the rover has a probability of getting stuck when the lunar dust is at its highest and follows a sigmoidal function. If the agent is stuck for more than 5 days in a row, it will be considered a terminal state where the rover will be inoperable.
+- Crashing: The rover has a probability of crashing when the absolute value of the change in height is higher than 100m, pretending that the agent either has fallen down a cliff and crashed or the rover has flipped over. If the agent crashes, it will be considered a terminal state where the rover will be inoperable.
+- Component failure: The rover has a probability of failing as a function of time. This probability follows a sigmoidal function where the rover has a 10% probability of failing after X amount of time-steps. If the rover fails, it will be considered a terminal state where the rover will be inoperable.
+
+### Rewards:
+
+The reward structure is set in a way to encourage the rover to explore, minimize the time it takes to find the resources, maximize the exploration of different resources, be safe in avoiding crashing, and manage its energy consumption in a safely manner. The rewards are defined as follows:
+
+- Time-step: Each time-step the rover will receive a reward of -1, to encourage the rover to find the resources as fast as possible.
+- Gathering resources: The rover will receive a reward of 40 for gathering water and 60 for gathering gold. This reward is set to encourage the rover to gather resources.
+- Gathering in the same spot: The rover will receive a reward of -65 if it gathers resources in the same spot. This reward is set to encourage the rover to explore different areas of the grid-world.
+- Getting stuck (failed to apply the attempted action): The rover will receive a reward of -70 if it gets stuck. This reward is set to encourage the rover to avoid areas of high lunar dust.
+- Crashing: The rover will receive a reward of -1000 if it crashes. This reward is set to ensure the rovers safety.
+- Battery management: The rover will receive a reward of -20 if the battery is under $20 \%$ and -10 if the battery is above $95 \%$. This reward is set to teach the rover to not be left with low battery but ensuring that it also explores the environment and not just stays in one spot to recharge the battery continuously.
+- Component failure: Component failure will be considered a terminal state, but the rover will not receive any reward for it. It has been built as a function of time and the rover already gets penalized for taking too long to operate. Thus, this component has been added to make the problem more realistic but it should not be added to the reward structure.
+
+## Solvers:
+
+### PPO (On Policy):
+
+It is an On Policy method that uses a policy gradient to learn the optimal policy. It is a good method to try in this problem as it can handle continuous action spaces and has shown good results in other problems. It is a bit more complex to set up, but it is worth trying it to see the differences with the Off Policy methods.
+
+### DQN/Rainbow (Off Policy):
+
+It is an Off Policy method that uses a Q function to learn the optimal policy. It is a good method to try in this problem as it can handle continuous action spaces and has shown good results in other problems. It is a bit more complex to set up, but it is worth trying it to see the differences with the On Policy methods.
+
+### SAC (Off Policy):
+
+It is an Off Policy method that uses the maximum entropy framework to learn a stochastic policy. It is a good method to try in this problem as it can handle continuous action spaces and has shown good results in other problems. It is a bit more complex to set up, but it is worth trying it to see the differences with the On Policy methods.
+
+### APPO (Hybrid):
+
+It is a hybrid method that combines the on and off policy methods. It is a bit more complex to set up, but it is worth trying it to see the differences with the On Policy and Off Policy methods.
+
+**Note:** APPO uses a preprocessor that checks whether observations are within the defined space. If they aren’t, it raises a ValueError, causing the training process to halt. For that reason, I will wrap the environment and expand the observation space bounds to allow the algorithm to handle all possible observations without errors.

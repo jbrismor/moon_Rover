@@ -1,0 +1,15 @@
+Metadata-Version: 2.1
+Name: lunabot
+Version: 0.1.0
+Summary: Lunar Geosearch RL environment
+Author: Your Name
+License: MIT
+License-File: LICENSE
+Requires-Dist: gymnasium
+Requires-Dist: numpy
+Requires-Dist: pygame
+Requires-Dist: matplotlib
+Requires-Dist: scipy
+Requires-Dist: noise
+Requires-Dist: Pillow
+Requires-Dist: torch

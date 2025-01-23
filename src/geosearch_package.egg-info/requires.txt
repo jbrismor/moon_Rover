@@ -1,0 +1,8 @@
+gymnasium
+numpy
+pygame
+matplotlib
+scipy
+noise
+Pillow
+torch
