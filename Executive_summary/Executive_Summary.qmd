@@ -19,9 +19,7 @@ Consider an rectilinear spatial environment defined on a 2D grid, i.e. a grid-wo
 
 Assume the physical dimension of the grid-size is defined by user-specified simulation parameters $Lx$ and $Ly$ which is partitions into $Nx$ and $Ny$ cells.
 
-For simplicity, assume the grid-size is square, i.e. $Lx=Ly$ and $Nx=Ny$. 
-
-For debugging and prototyping, we will set $Lx=Ly=25$ meters, and $Nx=Ny=25$.
+For simplicity, assume the grid-size is square, i.e. $Lx=Ly=35$ and $Nx=Ny=35$, pretending each cell is 1km by 1km.
 
 * `Simulation parameters`:
   * $Lx$ : Length of the grid in the x-direction
@@ -47,323 +45,133 @@ These functions may be empirical measurements interpolated onto the grid from re
 
 We will assume fixed boundary conditions, i.e. the rover cannot move outside the grid-world and will bounce off the edges, if it attempts to exit.
 
-The model could also be extended to include periodic boundary conditions, i.e. the rover will wrap around to the opposite side of the grid-world, if it attempts to exit.
-
-However, for simplicity, we will adhere to fixed boundary conditions.
-
 ### Time:
 
-The simulation time $t_i=Delta t times i$ is discrete, and defined by a time-step size $Delta t$, which is the amount of time that elapses between each simulation step. 
+Each time step as of right now takes 24hours in Earth (as it will equal to one kilometer of movement). This can later be adjusted.
 
-The episode will run for a fixed number of time-steps, $T$, which is a user-specified parameter. This parameter can be chosen to represent a realistic anticipated lifetime of the rover, e.g. 2 years. However, the episode can also terminate early if the rover becomes inoperable.
+**Daylight cycle**: In this simulation, we will also include the normal fluctuations of light in the moon, rounding up to 30 days for a
+full cycle. This will affect the battery charge.
 
-The total number of steps is therefore $N_t=frac{T}{Delta t}$.
+### Sunlight:
 
-The rover transverses the grid-world as it moves through the environment, this path is described by $mathbf r_i=(x_i,y_i)=(x(t_i), y(t_i))$ for $t=0, 1, 2, dots, T$.
+The sunlight intensity is calculated throughout a lunar day-night cycle, and addapting the intensity of the sunlight on a dimensionless scale between 0 and 1 through a sinusoidal equation:
+$$
+sunlight = 0.5 * (1 + \sin(2 \times \pi \times (time\_fraction - 0.25))) \times height\_factor
+$$ {#eq-sunlight}
 
-The rover attempts to take one step $mathbf r_i=Delta x, 0$ or $mathbf Delta r_i=(0, Delta y)$ per time-step. 
+### Surface Elevation:
 
-Therefore $Delta t$ can be chosen based on a realistic rover velocity. 
+Right now, due to our size, the levation has been created with a gaussian noise and smoothed out using a gaussian filter. Then, two peaks have been added to simulate a cliff and a crater.
 
-For example, assuming a slow rover velocity, with a speed of 1 meter/hr, we could assume a time-step of 1 hour (i.e. 1 cell per time-step (per hour)). If we simulation for $T=2$ years, we would need $N_t=17532$ steps.
+### Lunar Dust:
 
-**Daylight cycle**: In this simulation, we will also include the normal fluctuations of light in a day, which will affect the battery charge and maybe the rover's sensors.
+The Lunar Dust adds stochasticity to the problem. First, it creates a base noise level for each cell in the grid through Python’s `noise` package. We used a Gaussian filter to smooth out the edges of the dust patches to avoid extreme differences in height. The values are then normalized on a scale of 0 to 1 meters and inverted such that lower areas (bottoms of cliffs, bottoms of craters) receive higher dust accumulation (this is also dependent on a dust_height_correlation parameter). The final dust map for the environment is calculated by this equation:
+$$
+\begin{aligned}
+\text{final\_dust} = &\ (\text{dust\_height\_correlation} \times \text{height\_influence}) \\
+&+ ((1 - \text{dust\_height\_correlation}) \times \text{dust\_map})
+\end{aligned}
+$$ {#eq-dust}
+
+### Resources:
+
+The goal of the rover is to find the desired resources (called gold and water for simplicity). In both resource scenarios, the rover does not initially know where any of the resources are located. 
+
+For water, the probability distribution is of Gaussian nature, where the center of these water pools are randomized per episode. For every water resource, the Gaussian distribution is shaped through a covariance matrix, controlling both its spread and orientation. Additionally, to better simulate the unknown, we added a noise scale to the Gaussian values as means of providing randomness to the resource pools. To finalize the probability map, values under 0.15 are zeroed out and re-normalized to target potential resource regions of the map. We also clear out resource probabilities in the landing zone (center of the grid).
+
+Gold, on the other hand, can be found in vein-like shapes across the environment. These veins are calculated by randomizing a starting location and direction of growth and mapping the resource in the specified direction with conditions to ensure a minimum resource amount and length. After calculating this probability map, the rest of the process mirrors that of the water calculation. Then ground truth is calculated utilizing the probability map, adding noise and thresholding, and converting to binary values.
 
 ### Rover attributes:
 
-* Static attributes
-  * Mass (kg)
-  * Battery capacity (kw-Hr)
-  * Baseline energy consumption rate (Watts)
-* Dynamic attributes ($t_i$)
-  * Current battery level (kw-Hr)
-  * Current position $mathbf r_i=(x(t_i), y(t_i))$
-  * Current height: $h_i=h(x(t_i), y(t_i))$
+#### Battery:
 
-### Energy usage:
+The rover contains two batteries, the same size as the Apollo Lunar Roving Vehicle (LRV) at a capacity of 29,300 Wh each, making it a total of 58,600 Wh.
 
-At each time-step, the rover consumes energy to move, and to operate its sensors and other components.
+#### Solar pannels:
 
-It also absorbs energy from the sun, which is a function of the solar lumination at the current location $I(x(t_i), y(t_i))$.
+**Input**:
 
-We assume the following simplistic energy consumption model:
-
-$$Delta E_i=Delta E_{in}(I_i)+Delta E_{out}(Delta h_{i-1})$$
-
-Where $Delta E_{in}$ is the energy absorbed from the sun, and $Delta E_{out}$ is the energy consumed to move the rover.
-
-This model can easily be parameterized based on realistic consumptions and absorption rates which can be estimated based on the size and efficiency of the rovers solar panels, and its average energy consumption per unit distance.
-
-The battery level is incremented based on $Delta E_i$.
-
-Each time step, the battery level is updated based from the amount of energy consumed, and the amount of energy absorbed from the sun. The first is calculated based on the distance moved, the change in height, and the amount of lunar dust (noise). The second is calculated based on the intensity of the sun at that time of the day.
-
-## Initial environment
-
-For prototyping and debugging, we will use a simple environment described as follower 
-
-
-
-$f_1(x,y)$ = water distribution (probability distribution for water)
-
-$f_2(x,y)$ = gold distribution (probability distribution for gold)
-
-
-
-For simplicity assume these are just 2D Gaussian distributions as follows
+The rover has three solarpanels (like Apollo LRV) convert sunlight into Wh units, where the maximum amount of energy produced in a day with maximum sunlight is 6,532.8 Wh. The Input is calculated as follows:
 
 $$
-f(x, y)=frac{1}{2 pi sigma_X sigma_Y sqrt{1-rho^2}} mathrm{e}^{-frac{1}{2left(1-rho^2right)}left[left(frac{x-mu_X}{sigma_X}right)^2-2 rholeft(frac{x-mu_X}{sigma_X}right)left(frac{y-mu_Y}{sigma_Y}right)+left(frac{y-mu_Y}{sigma_Y}right)^2right]}
-$$ 
-
-For the parameters $boldsymbol{mu}$ and $mathbf{Sigma}$
+\text{Daily Output} = 272.2 \times 24 \times \text{num\_solar\_panels}
+$$ {#eq-daily-energy}
 
 $$
-boldsymbol{mu}=binom{mu_X}{mu_Y}, quad mathbf{Sigma}=left(begin{array}{cc}
-sigma_X^2 & rho sigma_X sigma_Y 
-rho sigma_X sigma_Y & sigma_Y^2
-end{array}right)
-$$
+\begin{align}
+\text{Energy Generated} &= \text{Daily Output} \times \text{Sunlight Intensity} 
+\end{align}
+$$ {#eq-generated_en}
 
-For the simulation parameters use
+**Output**:
 
-$f_1 rightarrow boldsymbol{mu}=(20,20), sigma_X=1, sigma_Y=1, rho=0.25$
+The energy used follows the following rules:
 
-$f_2 rightarrow boldsymbol{mu}=(10,10), sigma_X=1, sigma_Y=1, rho=-0.25$
+- For every time step the rover uses a base consumption of 1,200 Wh for its systems and connectivity.
+- For any action that is not staying still, the rover consumes 13,890 Wh per kilometer Wikipedia.
+- If the rover chooses to gather a resource, it will automatically consume an additional 20,000 Wh.
 
-From these, you can create a matrix (heat-map), with the value of these functions sampled at the lower left corner of the grid. For example cell (0,0) $rightarrow$ x=0,y=0
-
-The state-reward is created based on a weighted sum of these
-
-$R(x,y)= A f_1(x,y) + (1-A) f_2(x,y)$ 
-
-Where $A$ is a user-parameter that defines the explorers primary interests, for example (A)=1 would mean they only care about water and not gold. For consistancy, Please use `A=0.75`
-
-### Height:
-
-We assume the height is a bi-variate normal distribution (working on this by Eric)
-
-```{python, eval=FALSE}
-#| eval: false
-
-## Plot of the height distribution
-
-import matplotlib.pyplot as plt
-
-import numpy as np
-
-from scipy.stats import multivariate_normal
-
-dx=1 #meter
-
-dy=1 #meter
-
-Nx=25
-
-Ny=25
-
-Lx=Nx*dx
-
-Ly=Ny*dy
-
-ux=Lx/2
-
-uy=Ly/2
-
-sx=Lx/6
-
-sy=Ly/6
-
-rho=0.25
-
-x = np.linspace(0, Lx, Nx)
-
-y = np.linspace(0, Ly, Ny)
-
-X, Y = np.meshgrid(x, y)
-
-def height_distribution(ux, uy, sx, sy, rho):
-    return np.exp(-0.5*((X-ux)/sx)**2 - 0.5*((Y-uy)/sy)**2 - rho*((X-ux)/sx)*((Y-uy)/sy))
-
-# surface plot of the height distribution
-
-import matplotlib.pyplot as plt
-
-from mpl_toolkits.mplot3d import Axes3D
-
-import numpy as np
-
-H=height_distribution(ux, uy, sx, sy, rho)
-
-# Create a 3D plot
-fig = plt.figure()
-
-ax = fig.add_subplot(111, projection='3d')
-
-surface = ax.plot_surface(X, Y, H, cmap='viridis', edgecolor='none')
-
-# Add color bar and labels
-fig.colorbar(surface, ax=ax, shrink=0.5, aspect=5, label="f(x, y)")
-
-ax.set_title("3D Surface Plot of height function h(x, y)")
-
-ax.set_xlabel("X-axis")
-
-ax.set_ylabel("Y-axis")
-
-ax.set_zlabel("Height (m)")
-
-# Show plot
-
-plt.show()
-```
-
-## Action space
-
-The action space of the rover is defined by a set of actions, each action is a vector of length 2, representing the change in position of the rover in the x and y directions.
-
-The action space is defined as follows:
+Thus, the energy used is calculated as follows:
 
 $$
-\mathcal{A} = \left\{
-\begin{array}{cc}
-(1,0) & \text{Move right} \\
-(-1,0) & \text{Move left} \\
-(0,1) & \text{Move up} \\
-(0,-1) & \text{Move down} \\
-(0,0) & \text{Stay put or gather}
-\end{array}
-\right\}
+\begin{align}
+\text{Dust Factor} &= 1 + (\text{Dust Level} \times 0.5)
+\end{align}
+$$ {#eq-dust-factor}
+
 $$
+\begin{align}
+\text{Height Factor} &= 0.5 + \frac{100}{\text{Height Difference}} 
+\end{align}
+$$ {#eq-height-factor}
 
+$$
+\begin{align}
+\text{Movement Energy} &= 13,890 \times \text{Dust Factor} \times \text{Height Factor} 
+\end{align}
+$$ {#eq-movement}
 
-The rover can only move to a new cell if it is not an obstacle (e.g. a wall or a very steep hill), and if it is within the grid-world.
+$$
+\begin{align}
+\text{Next Battery Level} &= \text{Current Battery Level} + \nonumber \\ 
+& \text{Energy Generated} - \text{Energy Consumed} 
+\end{align}
+$$ {#eq-bat}
 
-## Rewards
+### Terminal states:
 
-The rewards of this problem are set in a way to penalize the rover for taking longer paths and spending a lot of energy but encouraging it to find the desired resources. The reward structure is defined as follows:
+There are three terminal states in the simulation:
 
-- Each time step the rover takes, it will receive a negative reward of -1.
-- If the rover is in a resource cell, it will receive a reward based on our function $R(x,y)$.
-- If the rover has a battery level under 20%, it will receive a negative reward of -10.
-- The rover will receive a reward based on the battery change in each step.
-- The rover will receive a positive reward if it gathers in a resource (prob as heatmap), and negative if it gathers outside a resource.
+- Crash: The change in height from one cell to the next is higher than 25 meters.
+- Stuck: Using a sigmoid probability function, the rover’s chance of getting stuck increases dramatically as dust depth approaches 0.25 meters, reaching a maximum 50% probability at 0.5 meters depth.
+  - Once stuck, the rover continues consuming energy while unable to move. If the rover remains stuck for 5 consecutive days, the mission is considered a failure and reaches a terminal state.
+- Random death: The rover’s probability of failing increases each day, reaching a maximum probability of 5% at the end of the episode (day 365).
 
-# Randomness 
+### Actions:
 
-In order to make the problem well suited for Reinforcement Learning, we need to add randomness to the environment.
+The following actions are available to the rover:
 
-We will do this by considering the following real world stochastic possibilities:
+- Stay still
+- Move up
+- Move down
+- Move left
+- Move right
+- Gather resource
 
-In simulation, these events will be randomly sampled, at each time-step. This will be done with a randomizer algorithm that witll change continuously the amount of lunar dust in the environment. If the lunar dust stays under a certain probability (e.g. 0.3), then it doesn't affect the rover. If it goes above that probability, then the rover will have a certain probability of getting stuck and will influence the energy consumption of the rover.
+### Rewards:
 
-**Note**: Technically the probabilities need to be treated as rates, i.e. the probability of the event per time-step, otherwise the events will occur too frequently in simulation, and need to treated accordingly, i.e. they need to be multiplied by the time-step size, 
+The reward structure is as follows:
 
-
-## Traction issues
-
-### Getting stuck  
-
-* We assume that the probability of getting stuck is a function of the depth $d$ of the lunar regolith. Where the depth of the lunar regolith is a function of the location in the grid, denoted $d(x, y)$.
-
-* We model the probability of getting stuck as a sigmoid function of the depth of the lunar regolith.
-  * The $w$ parameter is the width of the sigmoid function.
-  * The $xo$ parameter is the location of the center of the sigmoid function.
-  * These are simulation parameters, that are set by the user, we set them to $w=0.05$ meters and $xo=0.25$ meters.
-
-$$p_s(x, y)=p_{stuck}(x, y) = frac{1}{1 + e^{-(d(x, y) - xo)/w}}$$
-
-* We assume the depth takes on values between 0 and 1 meters.
-
-The following plot shows the probability of getting stuck as a function of the depth of the lunar regolith.
-
-```{python, eval=FALSE}
-#| eval: false
-## Plot of the probablity of getting stuck as a function of depth.
-
-import matplotlib.pyplot as plt
-import numpy as np
-
-
-# units of meters
-
-- w=0.05
-- xo=0.25
-- x = np.linspace(0, 0.5, 100)
-- y = 1 / (1 + np.exp(-(x - xo) / w))
-
-# label the axes
-
-plt.plot(x, y)
-
-plt.xlabel('Depth (m)')
-
-plt.ylabel('Probability of getting stuck')
-
-plt.show()
-
-# here we show the same plot but in ft rather than meters.
-
-plt.plot(x*3.28084, y)
-
-plt.xlabel('Depth (ft)')
-
-plt.ylabel('Probability of getting stuck')
-
-plt.show()
-```
-
-### Getting un-stuck
-
-If stuck, the action-set is constrained, it will still use energy in an attempt to get out, unless it becomes dormant to charge its battery. allowing it to no longer move, the probability of getting "un-stuck" is modeled by $p_{unstuck}(x, y|stuck) = 1-p_{stuck}(x, y)$. For example, if the rover is stuck, time-steps will still continue to iterate, we will keep sampling random numbers until it gets a number less than $1-p_s(x, y)$.
-
-```{python, eval=FALSE}
-#| eval: false
-# here we show the same plot but in ft rather than meters.
-
-plt.plot(x*3.28084, y,"-")
-plt.plot(x*3.28084, 1-y,"-")
-plt.plot(x[-1]+1.5, 0,"-")
-
-plt.xlabel('Depth (ft)')
-plt.ylabel('Probability of getting stuck')
-
-# legend
-plt.legend(['P(d|not_stuck) getting stuck', 'P(d|stuck): un-stuck'],loc='best')
-
-plt.show()
-```
-
-`Note:` We could make its probability of getting un-stuck also a function of its energy level (i.e. it is harder to get un-stuck with lower batteries). i.e. $p_{unstuck}(d,e|stuck)$ where $d$ is the depth of the lunar regolith and $e$ is the current energy level of the rover.
-
-## Crashing
-
-* In certain locations, the rover may fall down a hill, or a cliff, and become inoperable, this will result in a significant negative reward, and terminate the episode. 
-
-* We model the probability of crashing as a function of the slope of the terrain associated with the last step, this step will result in some change in height, denoted $Delta h$, the probability of crashing is $p_{crash}(Delta h)$. This can be modeled either as a sigmoid function (recommended), or a linear function (e.g. $p_{crash}(Delta h) = alphaDelta h$).
-
-## Component failure: 
-
-Logically the rover will eventually fail, for example some component will break, causing the rover to become inoperable, which will terminate the episode. We assume the probability of failure will increase with the age of the rover (i.e. simulation time $t$), where failure will eventually become inevitable.
-
-We also model this probability as a sigmoid function, but as a function of the simulation time $t$.
-
-$$p_f(t) = frac{1}{1 + e^{-(t - tau)/l}}$$
-
-Where $t$, $tau$, and $l$ are all in units of years. The parameter $tau$ can be interpreted as a half-life, i.e. the age at which the probability of failure is 50%, and $l$ is the size of the temporal window over which failure becomes likely.
-
-```{python, eval=FALSE}
-#| eval: false
-# units of meters
-
-tau=2
-l=0.25
-t = np.linspace(0, tau+6*l, 100)
-pf = 1 / (1 + np.exp(-(t - tau) / l))
-
-# label the axes
-plt.plot(t, pf)
-plt.xlabel('Simulation time (years)')
-plt.ylabel('Probability of component failure')
-plt.show()
-```
+::: {#table-rewards}
+| **Scenario**                  | **Reward/Penalty**           | **Explanation**                                                                   |
+|-------------------------------|------------------------------|-----------------------------------------------------------------------------------|
+| Base Time Penalty             | \(-1\)                      | Penalizes every time step to encourage efficiency.                                |
+| Monthly Survival Bonus        | \(+100\)                    | Reward for surviving another month.                                              |
+| Stuck State Daily Penalty     | \(-30\)                     | Penalty for being unable to move.                                                |
+| Terminal Stuck Penalty        | \(-100,000\)                | Ending penalty if stuck for 5 consecutive days.                                  |
+| Crash Penalty                 | \(-100,000\)                | Penalty if the agent crashes due to height changes.                              |
+| Gathering Water (Base)        | \(+200 \times \text{decay}\)| Reward for collecting water, reduced by decay for repeated gathers.              |
+| Gathering Gold (Base)         | \(+300 \times \text{decay}\)| Reward for collecting gold, reduced by decay for repeated gathers.               |
+| Low Battery Penalty           | \(-20\)                     | Penalty if the battery level drops below \(20\%\).                               |
+| Overcharged Battery Penalty   | \(-15\)                     | Penalty if the battery exceeds \(95\%\).                                         |
+:::
