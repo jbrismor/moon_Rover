@@ -1,5 +1,7 @@
 ---
 title: "Lunar Rover"
+subtitle: "Executive Summary"
+authors: ['James Hickman', 'Jorge Bris Moreno', 'Billy McGloin']
 format:
   html:
     embed-resources: true
@@ -31,7 +33,7 @@ Alternatively, the user could specify the size of a single cell, $dx=dy=1 ,meter
 
 ### Spatial information: 
 
-We describe the geographical environment as a collection of $m$ spatial functions, $f_i(x, y)$ for $i = 1, 2, dots, m$, representing a set of $m$ scalar fields defined on the grid.
+We describe the geographical environment as a collection of $m$ spatial functions, $f_i(x, y)$ for $i = 1, 2, ..., m$, representing a set of $m$ scalar fields defined on the grid.
 
 These functions represent various spatial attributes of interests, such as the probability distribution of water $p_w(x,y)$ or other resources, elevation or height encoding terrain topology $h(x,y)$, the depth of the lunar regolith $d(x,y)$, intensity of solar radiation $I(x,y)$, ... etc. An arbitrary number of such functions can be added as needed to address specific simulation requirements.
 
@@ -61,11 +63,12 @@ $$ {#eq-sunlight}
 
 ### Surface Elevation:
 
-Right now, due to our size, the levation has been created with a gaussian noise and smoothed out using a gaussian filter. Then, two peaks have been added to simulate a cliff and a crater.
+Surface elevation is generated using Gaussian noise, smoothed with a Gaussian filter to create a natural terrain base. Additional features like cliffs along mountain ranges and craters with rims are added to simulate realistic elevation variations, followed by final height scaling and blending. The elevation map is generated once upon initialization and remains constant for all episodes.
 
 ### Lunar Dust:
 
-The Lunar Dust adds stochasticity to the problem. First, it creates a base noise level for each cell in the grid through Python’s `noise` package. We used a Gaussian filter to smooth out the edges of the dust patches to avoid extreme differences in height. The values are then normalized on a scale of 0 to 1 meters and inverted such that lower areas (bottoms of cliffs, bottoms of craters) receive higher dust accumulation (this is also dependent on a dust_height_correlation parameter). The final dust map for the environment is calculated by this equation:
+The Lunar Dust adds stochasticity to the environment, with a new dust distribution generated at the start of each episode while the terrain elevation remains fixed. Gaussian noise is generated for each cell in the grid using NumPy, and a Gaussian filter smooths the dust distribution to avoid sharp edges. The values are normalized to a 0-1 scale, and the height map is normalized and inverted so that lower areas (e.g., bottoms of cliffs and craters) accumulate more dust, depending on a dust_height_correlation parameter. The final dust map is calculated as a weighted combination of the height influence and the smoothed noise, then scaled to a 0-0.5 range:
+
 $$
 \begin{aligned}
 \text{final\_dust} = &\ (\text{dust\_height\_correlation} \times \text{height\_influence}) \\
@@ -75,61 +78,70 @@ $$ {#eq-dust}
 
 ### Resources:
 
-The goal of the rover is to find the desired resources (called gold and water for simplicity). In both resource scenarios, the rover does not initially know where any of the resources are located. 
+The goal of the rover is to find the desired resources (called gold and water for simplicity). In both resource scenarios, the rover does not initially know where any of the resources are located but must explore and refine its understanding over time.
 
-For water, the probability distribution is of Gaussian nature, where the center of these water pools are randomized per episode. For every water resource, the Gaussian distribution is shaped through a covariance matrix, controlling both its spread and orientation. Additionally, to better simulate the unknown, we added a noise scale to the Gaussian values as means of providing randomness to the resource pools. To finalize the probability map, values under 0.15 are zeroed out and re-normalized to target potential resource regions of the map. We also clear out resource probabilities in the landing zone (center of the grid).
+For water, the probability distribution follows a Gaussian-based model, where the center of water pools is randomized per episode. Each pool’s shape and spread are determined by a covariance matrix, controlling both orientation and dispersion. To introduce additional uncertainty, a noise scale is applied to the Gaussian values, making resource locations more unpredictable. Finally, values below 0.15 are zeroed out and the map is re-normalized to highlight potential water-rich areas. Additionally, resource probabilities in the landing zone (center of the grid) are cleared to ensure a more realistic exploration challenge.
 
-Gold, on the other hand, can be found in vein-like shapes across the environment. These veins are calculated by randomizing a starting location and direction of growth and mapping the resource in the specified direction with conditions to ensure a minimum resource amount and length. After calculating this probability map, the rest of the process mirrors that of the water calculation. Then ground truth is calculated utilizing the probability map, adding noise and thresholding, and converting to binary values.
+For gold, resources appear in vein-like formations that grow in a randomized direction from an initial starting location. This ensures that gold is not randomly scattered but follows a structured pattern. The growth direction is adjusted to maintain a minimum resource density and vein length. After generating the probability map for gold, the same noise addition, thresholding, and re-normalization process is applied.
+
+**How the Rover Learns and Updates Its Map:**
+
+Since the rover does not have direct access to the underlying resource truth, it starts with the initial resource probability maps (before any noise is added). These maps serve as its belief about where resources may be located. As the rover explores and gathers resources, it updates its local probability estimates for nearby cells, refining its understanding of resource locations over time. This dynamic update mechanism allows the rover to make more informed decisions and prioritize high-probability areas, rather than relying on random exploration.
 
 ### Rover attributes:
 
 #### Battery:
 
-The rover contains two batteries, the same size as the Apollo Lunar Roving Vehicle (LRV) at a capacity of 29,300 Wh each, making it a total of 58,600 Wh.
+The rover contains two batteries, similar to the Apollo Lunar Roving Vehicle (LRV), with a combined total capacity of 58,600 Wh (29,300 Wh each). The rover’s energy management system calculates the balance between energy generation from solar panels and energy consumption during operations.
 
 #### Solar pannels:
 
 **Input**:
 
-The rover has three solarpanels (like Apollo LRV) convert sunlight into Wh units, where the maximum amount of energy produced in a day with maximum sunlight is 6,532.8 Wh. The Input is calculated as follows:
+The rover is equipped with three solar panels, similar to the Apollo LRV, which convert sunlight into energy (Wh). The energy generated depends on the sunlight intensity at the rover’s position, which is influenced by the lunar day-night cycle and terrain elevation. This is calculated as:
 
 $$
-\text{Daily Output} = 272.2 \times 24 \times \text{num\_solar\_panels}
+\text{Daily Input} = 272.2 \times 24 \times \text{num\_solar\_panels}
 $$ {#eq-daily-energy}
+
+The sunlight intensity is affected by terrain height, with lower areas receiving more sunlight due to less shading, as well as the current time in the lunar cycle. The energy generated at a given time is:
 
 $$
 \begin{align}
-\text{Energy Generated} &= \text{Daily Output} \times \text{Sunlight Intensity} 
+\text{Energy Generated} &= \text{Daily Input} \times \text{Sunlight Intensity} 
 \end{align}
 $$ {#eq-generated_en}
 
 **Output**:
 
-The energy used follows the following rules:
+The rover’s energy consumption is determined as follows:
 
-- For every time step the rover uses a base consumption of 1,200 Wh for its systems and connectivity.
-- For any action that is not staying still, the rover consumes 13,890 Wh per kilometer Wikipedia.
-- If the rover chooses to gather a resource, it will automatically consume an additional 20,000 Wh.
+- Each time step, the rover uses 1,200 Wh for its systems and connectivity.
+- Energy consumed for movement depends on:
 
-Thus, the energy used is calculated as follows:
+  - Dust: Higher dust levels increase energy consumption, calculated as:
 
-$$
-\begin{align}
-\text{Dust Factor} &= 1 + (\text{Dust Level} \times 0.5)
-\end{align}
-$$ {#eq-dust-factor}
+    $$
+    \text{Dust Factor} = 1 + (\text{Dust Level} \times 0.5)
+    $$ {#eq-dust-factor}
 
-$$
-\begin{align}
-\text{Height Factor} &= 0.5 + \frac{100}{\text{Height Difference}} 
-\end{align}
-$$ {#eq-height-factor}
+  - Height: Movement between positions is more energy-intensive with greater height differences:
 
-$$
-\begin{align}
-\text{Movement Energy} &= 13,890 \times \text{Dust Factor} \times \text{Height Factor} 
-\end{align}
-$$ {#eq-movement}
+    $$
+    \text{Height Factor} = 0.5 + \frac{\text{Height Difference}}{100}
+    $$ {#eq-height-factor}
+
+  - The total movement energy is then:
+
+    $$
+    \text{Movement Energy} = 13,890 \times \text{Dust Factor} \times \text{Height Factor}
+    $$ {#eq-movement}
+
+- Performing a gathering action consumes an additional 20,000 Wh.
+
+**Energy Balance**:
+
+The rover’s next battery level is calculated by balancing energy generation and consumption:
 
 $$
 \begin{align}
@@ -137,6 +149,8 @@ $$
 & \text{Energy Generated} - \text{Energy Consumed} 
 \end{align}
 $$ {#eq-bat}
+
+Battery levels are capped at 58,600 Wh, and if the battery level drops to 0 Wh, the rover becomes inoperable. This ensures that careful energy management is crucial for successful operations.
 
 ### Terminal states:
 
@@ -147,7 +161,7 @@ There are three terminal states in the simulation:
   - Once stuck, the rover continues consuming energy while unable to move. If the rover remains stuck for 5 consecutive days, the mission is considered a failure and reaches a terminal state.
 - Random death: The rover’s probability of failing increases each day, reaching a maximum probability of 5% at the end of the episode (day 365).
 
-### Actions:
+### Action Space:
 
 The following actions are available to the rover:
 
@@ -157,6 +171,8 @@ The following actions are available to the rover:
 - Move left
 - Move right
 - Gather resource
+
+These actions determine how the rover explores the terrain, avoids hazards, and efficiently manages its battery while gathering essential resources.
 
 ### Rewards:
 
@@ -175,3 +191,10 @@ The reward structure is as follows:
 | Low Battery Penalty           | \(-20\)                     | Penalty if the battery level drops below \(20\%\).                               |
 | Overcharged Battery Penalty   | \(-15\)                     | Penalty if the battery exceeds \(95\%\).                                         |
 :::
+
+
+##  Visualizations
+
+Below is a visualization of our environment. Our goal is to be able to visualize the optimal policy at various times of the day in addition to rendering the optimal policy as the rover navigates its environemnt.
+
+![Environment Plot](../images/env_plot.png)
