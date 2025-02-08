@@ -428,42 +428,56 @@ class Utils:
     
     @staticmethod
     def _update_resource_probabilities(env, center_i, center_j):
-        """Update resource probabilities in 5x5 area around gathering location"""
-        # Define the area to update
-        i_start = max(0, center_i - 2)
-        i_end = min(env.grid_height, center_i + 3)
-        j_start = max(0, center_j - 2)
-        j_end = min(env.grid_width, center_j + 3)
+        """
+        Update water probabilities using discrete rings based on environment size.
+        Ring sizes are based on total width (both sides from center).
         
-        # Get gathering results from ground truth
+        Args:
+            env: The environment instance
+            center_i, center_j: Center coordinates of the gathering action
+        """
+        # Calculate ring sizes based on environment dimensions
+        env_size = env.grid_height  # Since it's a square environment
+        # Convert percentages to total widths and then divide by 2 for distance from center
+        first_ring_size = max(1, int(env_size * 0.1 / 2))   # 10% total width → ~5% from center
+        second_ring_size = max(2, int(env_size * 0.2 / 2))  # 20% total width → ~10% from center
+        third_ring_size = max(3, int(env_size * 0.3 / 2))   # 30% total width → ~15% from center
+        
+        # Update factors for each ring
+        first_ring_factor = 0.1
+        second_ring_factor = 0.05
+        third_ring_factor = 0.01
+        
+        # Get gathering result
         has_water = env.water_ground_truth[center_i, center_j]
-        has_gold = env.gold_ground_truth[center_i, center_j]
         
-        # Update factors based on distance
-        for i in range(i_start, i_end):
-            for j in range(j_start, j_end):
-                # Calculate Manhattan distance
-                distance = abs(i - center_i) + abs(j - center_j)
+        # Update center cell with certainty
+        env.water_probability[center_i, center_j] = 1.0 if has_water else 0.0
+        
+        # Calculate bounds for each ring
+        for i in range(env.grid_height):
+            for j in range(env.grid_width):
+                if i == center_i and j == center_j:
+                    continue  # Skip center cell as it's already updated
+                    
+                # Calculate Manhattan distance from center
+                distance = max(abs(i - center_i), abs(j - center_j))
                 
-                # Update factor decreases with distance
-                if distance == 0:
-                    factor = 0.8  # Strong update at center
-                elif distance == 1:
-                    factor = 0.4  # Medium update for adjacent cells
+                # Determine which ring the cell belongs to and apply appropriate factor
+                if distance <= first_ring_size:
+                    factor = first_ring_factor
+                elif distance <= second_ring_size:
+                    factor = second_ring_factor
+                elif distance <= third_ring_size:
+                    factor = third_ring_factor
                 else:
-                    factor = 0.2  # Weak update for outer ring
+                    continue  # Skip cells outside the third ring
                 
-                # Update water probabilities
+                # Update probability based on water presence and factor
                 if has_water:
-                    env.water_probability[i, j] = min(1.0, env.water_probability[i, j] * (1 + factor))
+                    env.water_probability[i, j] = min(1.0, env.water_probability[i, j] + factor)
                 else:
-                    env.water_probability[i, j] = max(0.0, env.water_probability[i, j] * (1 - factor))
-                
-                # Update gold probabilities
-                if has_gold:
-                    env.gold_probability[i, j] = min(1.0, env.gold_probability[i, j] * (1 + factor))
-                else:
-                    env.gold_probability[i, j] = max(0.0, env.gold_probability[i, j] * (1 - factor))
+                    env.water_probability[i, j] = max(0.0, env.water_probability[i, j] - factor)
 
     @staticmethod
     def calculate_height(pos, height_map):
