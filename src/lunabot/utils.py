@@ -521,7 +521,7 @@ class Utils:
         return sunlight_map[i, j]
 
     @staticmethod
-    def calculate_bat(current_pos, next_pos, current_bat_level, batt_capacity, sunlight_map, height_map, dust_map, action, num_solar_panels=3):
+    def calculate_bat(current_pos, next_pos, current_bat_level, batt_capacity, sunlight_map, height_map, dust_map, action, num_solar_panels=4): # change num_solar_panels from 3 to 4
         """
         Calculate new battery level based on energy consumption and generation.
         
@@ -545,12 +545,12 @@ class Utils:
         energy_generated = daily_solar_output * sunlight
         
         # 2. Calculate energy consumption
-        energy_consumed = 1200  # Base consumption
+        energy_consumed = 800  # Base consumption # change from 1200 to 800
         
         if action != 4:  # If not staying still
             # Movement energy calculation
             dust_level = Utils.calculate_dust(next_pos, dust_map)
-            dust_factor = 1 + (dust_level * 0.5)  # 1-1.25x multiplier (since dust level is 0-0.5)
+            dust_factor = 0.9 + (dust_level * 0.5)  # 1-1.25x multiplier (since dust level is 0-0.5) # changed 1 + to 0.9+
             
             height_diff = abs(Utils.calculate_height(next_pos, height_map) - 
                             Utils.calculate_height(current_pos, height_map))
@@ -560,7 +560,7 @@ class Utils:
             energy_consumed += movement_energy
         
         if action == 5:  # Gathering action
-            energy_consumed += 20000  # Additional energy for gathering
+            energy_consumed += 12000  # Additional energy for gathering # change from 20000 to 12000
         
         # 3. Calculate new battery level
         next_bat_level = current_bat_level + energy_generated - energy_consumed

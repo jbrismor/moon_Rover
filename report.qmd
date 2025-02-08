@@ -116,7 +116,7 @@ $$ {#eq-dust-factor}
 
 $$
 \begin{align}
-\text{Height Factor} &= 0.5 + \frac{100}{\text{Height Difference}} 
+\text{Height Factor} &= 0.5 + \frac{\text{Height Difference}}{100} 
 \end{align}
 $$ {#eq-height-factor}
 
