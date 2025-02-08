@@ -75,10 +75,10 @@ class GeosearchEnv(gym.Env):
 
         # Add new tracking for gathered resources and their decay
         self.gathered_counts = {}  # Dictionary to track number of times each location was gathered
-        self.max_gather_times = 8  # Number of times before rewards reach 0
-        self.base_water_reward = 200  # Base reward for gathering water
-        self.base_gold_reward = 300   # Base reward for gathering gold
-        self.gather_decay = 25        # Reward decay per gathering
+        self.max_gather_times = 20  # Number of times before rewards reach 0 # change from 8 to 20
+        self.base_water_reward = 5000  # Base reward for gathering water # change from 200 to 500
+        self.base_gold_reward = 6000   # Base reward for gathering gold # change from 300 to 600
+        self.gather_decay = 250        # Reward decay per gathering
 
         # Add new state tracking variables
         self.stuck_days = 0  # Track consecutive days stuck
@@ -88,7 +88,7 @@ class GeosearchEnv(gym.Env):
         # Energy system constants
         self.num_solar_panels = 3  # Using 3 panels as suggested
         self.solar_panel_output = 272.2  # Watts per panel
-        self.battery_capacity = 58600  # Wh (two batteries)
+        self.battery_capacity = 73250  # Wh (two batteries) # change from 58600 to 73250 (2.5 batteries)
         self.base_consumption = 1200  # Wh per day
         self.movement_base_energy = 13890  # Wh per 1000m
         self.gathering_energy = 20000  # Wh
@@ -150,7 +150,7 @@ class GeosearchEnv(gym.Env):
         # Check for month completion reward
         current_month = self.current_day // self.month_length
         if current_month > self.last_month_reward:
-            total_reward += 100  # bonus for surviving another month
+            total_reward += 1000  # bonus for surviving another month # change from 100 to 1000
             self.last_month_reward = current_month
 
         # movement logic - only execute if not stuck
@@ -221,7 +221,7 @@ class GeosearchEnv(gym.Env):
         self.current_day = self.current_day + 1
 
         # Battery level rewards
-        if next_bat_level < (0.2 * self.battery_capacity):
+        if next_bat_level < (0.1 * self.battery_capacity): # change from 0.2 to 0.1 battery level
             total_reward -= 20  # Penalty for low battery
         elif next_bat_level > (0.95 * self.battery_capacity):
             total_reward -= 15  # Penalty for overcharged battery
