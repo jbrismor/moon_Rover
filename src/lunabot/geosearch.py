@@ -30,7 +30,8 @@ class GeosearchEnv(gym.Env):
                                  shape=(2,), dtype=np.float32),
             'sunlight': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
             'dust': spaces.Box(low=0, high=0.5, shape=(1,), dtype=np.float32),
-            'water_prob': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
+            'water_prob': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
+            'confidence': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
             #,'gold_prob': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
         })
 
@@ -65,6 +66,9 @@ class GeosearchEnv(gym.Env):
             threshold=0.1,
             existing_resources=None  # Water goes first
         )
+
+        # Initialize confidence map
+        self.confidence_map = np.zeros((self.grid_height, self.grid_width))
 
         # self.gold_ground_truth = Utils.generate_ground_truth(
         #     self.gold_probability, 
@@ -263,6 +267,9 @@ class GeosearchEnv(gym.Env):
             threshold=0.1,
             existing_resources=None  # Water goes first
         )
+
+        # Reset confidence map
+        self.confidence_map = np.zeros((self.grid_height, self.grid_width))
 
         # self.gold_ground_truth = Utils.generate_ground_truth(
         #     self.gold_probability, 
@@ -587,6 +594,7 @@ class GeosearchEnv(gym.Env):
         sunlight_level = Utils.calculate_sunlight_level(sunlight_map, self.agent_pos[0], self.agent_pos[1])
         dust = Utils.calculate_dust(self.agent_pos, self.dust_map)
         water_prob = self.water_probability[self.agent_pos[0], self.agent_pos[1]]
+        confidence = self.confidence_map[self.agent_pos[0], self.agent_pos[1]]  # get confidence value for current position
         # gold_prob = self.gold_probability[self.agent_pos[0], self.agent_pos[1]]
 
         obs_dict = {
@@ -595,7 +603,8 @@ class GeosearchEnv(gym.Env):
             'position': np.array(self.agent_pos, dtype=np.float32),
             'sunlight': np.array([sunlight_level], dtype=np.float32),
             'dust': np.array([dust], dtype=np.float32),
-            'water_prob': np.array([water_prob], dtype=np.float32)
+            'water_prob': np.array([water_prob], dtype=np.float32),
+            'confidence': np.array([confidence], dtype=np.float32)
             # ,'gold_prob': np.array([gold_prob], dtype=np.float32)
         }
         return obs_dict

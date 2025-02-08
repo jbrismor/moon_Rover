@@ -429,8 +429,7 @@ class Utils:
     @staticmethod
     def _update_resource_probabilities(env, center_i, center_j):
         """
-        Update water probabilities using discrete rings based on environment size.
-        Ring sizes are based on total width (both sides from center).
+        Update water probabilities and confidence using discrete rings based on environment size.
         
         Args:
             env: The environment instance
@@ -438,7 +437,6 @@ class Utils:
         """
         # Calculate ring sizes based on environment dimensions
         env_size = env.grid_height  # Since it's a square environment
-        # Convert percentages to total widths and then divide by 2 for distance from center
         first_ring_size = max(1, int(env_size * 0.1 / 2))   # 10% total width → ~5% from center
         second_ring_size = max(2, int(env_size * 0.2 / 2))  # 20% total width → ~10% from center
         third_ring_size = max(3, int(env_size * 0.3 / 2))   # 30% total width → ~15% from center
@@ -447,12 +445,18 @@ class Utils:
         first_ring_factor = 0.1
         second_ring_factor = 0.05
         third_ring_factor = 0.01
+
+        # Confidence factors for each ring
+        first_ring_conf = 0.3
+        second_ring_conf = 0.15
+        third_ring_conf = 0.05
         
         # Get gathering result
         has_water = env.water_ground_truth[center_i, center_j]
         
         # Update center cell with certainty
         env.water_probability[center_i, center_j] = 1.0 if has_water else 0.0
+        env.confidence_map[center_i, center_j] = 1.0  # Complete confidence in gathered cell
         
         # Calculate bounds for each ring
         for i in range(env.grid_height):
@@ -463,21 +467,27 @@ class Utils:
                 # Calculate Manhattan distance from center
                 distance = max(abs(i - center_i), abs(j - center_j))
                 
-                # Determine which ring the cell belongs to and apply appropriate factor
+                # Determine which ring the cell belongs to and apply appropriate factors
                 if distance <= first_ring_size:
-                    factor = first_ring_factor
+                    prob_factor = first_ring_factor
+                    conf_factor = first_ring_conf
                 elif distance <= second_ring_size:
-                    factor = second_ring_factor
+                    prob_factor = second_ring_factor
+                    conf_factor = second_ring_conf
                 elif distance <= third_ring_size:
-                    factor = third_ring_factor
+                    prob_factor = third_ring_factor
+                    conf_factor = third_ring_conf
                 else:
                     continue  # Skip cells outside the third ring
                 
                 # Update probability based on water presence and factor
                 if has_water:
-                    env.water_probability[i, j] = min(1.0, env.water_probability[i, j] + factor)
+                    env.water_probability[i, j] = min(1.0, env.water_probability[i, j] + prob_factor)
                 else:
-                    env.water_probability[i, j] = max(0.0, env.water_probability[i, j] - factor)
+                    env.water_probability[i, j] = max(0.0, env.water_probability[i, j] - prob_factor)
+                
+                # Update confidence - take maximum between current and new confidence
+                env.confidence_map[i, j] = max(env.confidence_map[i, j], conf_factor)
 
     @staticmethod
     def calculate_height(pos, height_map):
