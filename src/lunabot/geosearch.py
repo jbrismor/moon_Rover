@@ -30,8 +30,8 @@ class GeosearchEnv(gym.Env):
                                  shape=(2,), dtype=np.float32),
             'sunlight': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
             'dust': spaces.Box(low=0, high=0.5, shape=(1,), dtype=np.float32),
-            'water_prob': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
-            'gold_prob': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
+            'water_prob': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
+            #,'gold_prob': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
         })
 
         # Lunar characteristics  
@@ -56,7 +56,7 @@ class GeosearchEnv(gym.Env):
 
         # Generate water and gold distributions
         self.water_probability = Utils.generate_water_probability(self.grid_height, self.grid_width)
-        self.gold_probability = Utils.generate_gold_probability(self.grid_height, self.grid_width)
+        # self.gold_probability = Utils.generate_gold_probability(self.grid_height, self.grid_width)
 
         # Generate ground truths sequentially to avoid overlap
         self.water_ground_truth = Utils.generate_ground_truth(
@@ -66,18 +66,18 @@ class GeosearchEnv(gym.Env):
             existing_resources=None  # Water goes first
         )
 
-        self.gold_ground_truth = Utils.generate_ground_truth(
-            self.gold_probability, 
-            noise_factor=0.2, 
-            threshold=0.2,
-            existing_resources=self.water_ground_truth  # Gold avoids water locations
-        )
+        # self.gold_ground_truth = Utils.generate_ground_truth(
+        #     self.gold_probability, 
+        #     noise_factor=0.2, 
+        #     threshold=0.2,
+        #     existing_resources=self.water_ground_truth  # Gold avoids water locations
+        # )
 
         # Add new tracking for gathered resources and their decay
         self.gathered_counts = {}  # Dictionary to track number of times each location was gathered
         self.max_gather_times = 8  # Number of times before rewards reach 0
         self.base_water_reward = 200  # Base reward for gathering water
-        self.base_gold_reward = 300   # Base reward for gathering gold
+        # self.base_gold_reward = 300   # Base reward for gathering gold
         self.gather_decay = 25        # Reward decay per gathering
 
         # Add new state tracking variables
@@ -104,8 +104,8 @@ class GeosearchEnv(gym.Env):
 
         # Resource tracking
         self.resources_gathered = {
-            'water': {'count': 0, 'locations': set()},
-            'gold': {'count': 0, 'locations': set()}
+            'water': {'count': 0, 'locations': set()}
+            #,'gold': {'count': 0, 'locations': set()}
         }
 
         # Rendering setup
@@ -173,8 +173,9 @@ class GeosearchEnv(gym.Env):
                     gather_count = self.gathered_counts.get(loc_key, 0)
                     
                     # Calculate decay factor (linear decay)
-                    decay_factor = max(0, 1 - (gather_count * self.gather_decay / 
-                                             (self.base_water_reward if self.water_ground_truth[i, j] else self.base_gold_reward)))
+                    decay_factor = max(0, 1 - (gather_count * self.gather_decay / self.base_water_reward))
+                    # decay_factor = max(0, 1 - (gather_count * self.gather_decay / 
+                    #                          (self.base_water_reward if self.water_ground_truth[i, j] else self.base_gold_reward)))
                     
                     # Update gather count
                     self.gathered_counts[loc_key] = gather_count + 1
@@ -186,11 +187,11 @@ class GeosearchEnv(gym.Env):
                             self.resources_gathered['water']['count'] += 1
                             self.resources_gathered['water']['locations'].add(loc_key)
                     
-                    if self.gold_ground_truth[i, j]:
-                        total_reward += self.base_gold_reward * decay_factor
-                        if loc_key not in self.resources_gathered['gold']['locations']:
-                            self.resources_gathered['gold']['count'] += 1
-                            self.resources_gathered['gold']['locations'].add(loc_key)
+                    # if self.gold_ground_truth[i, j]:
+                    #     total_reward += self.base_gold_reward * decay_factor
+                    #     if loc_key not in self.resources_gathered['gold']['locations']:
+                    #         self.resources_gathered['gold']['count'] += 1
+                    #         self.resources_gathered['gold']['locations'].add(loc_key)
                     
                     # Update probabilities in surrounding area
                     Utils._update_resource_probabilities(self, i, j)
@@ -253,7 +254,7 @@ class GeosearchEnv(gym.Env):
 
         # Generate water and gold distributions
         self.water_probability = Utils.generate_water_probability(self.grid_height, self.grid_width)
-        self.gold_probability = Utils.generate_gold_probability(self.grid_height, self.grid_width)
+        # self.gold_probability = Utils.generate_gold_probability(self.grid_height, self.grid_width)
 
         # Generate ground truths sequentially to avoid overlap
         self.water_ground_truth = Utils.generate_ground_truth(
@@ -263,12 +264,12 @@ class GeosearchEnv(gym.Env):
             existing_resources=None  # Water goes first
         )
 
-        self.gold_ground_truth = Utils.generate_ground_truth(
-            self.gold_probability, 
-            noise_factor=0.2, 
-            threshold=0.2,
-            existing_resources=self.water_ground_truth  # Gold avoids water locations
-        )
+        # self.gold_ground_truth = Utils.generate_ground_truth(
+        #     self.gold_probability, 
+        #     noise_factor=0.2, 
+        #     threshold=0.2,
+        #     existing_resources=self.water_ground_truth  # Gold avoids water locations
+        # )
 
         # Clear gathered resources tracking
         self.gathered_counts = {}
@@ -309,8 +310,8 @@ class GeosearchEnv(gym.Env):
         
         # Reset resource tracking
         self.resources_gathered = {
-            'water': {'count': 0, 'locations': set()},
-            'gold': {'count': 0, 'locations': set()}
+            'water': {'count': 0, 'locations': set()}
+            #,'gold': {'count': 0, 'locations': set()}
         }
 
         obs = self._get_observation()
@@ -445,9 +446,9 @@ class GeosearchEnv(gym.Env):
 
         # Add resource tracking display
         water_count = self.resources_gathered['water']['count']
-        gold_count = self.resources_gathered['gold']['count']
+        # gold_count = self.resources_gathered['gold']['count']
         water_text = font.render(f"Water: {water_count}", True, self.colors["white"])
-        gold_text = font.render(f"Gold: {gold_count}", True, self.colors["white"])
+        # gold_text = font.render(f"Gold: {gold_count}", True, self.colors["white"])
 
         # Display all text on the screen
         self.screen.blit(time_text, (10, 10))
@@ -457,7 +458,7 @@ class GeosearchEnv(gym.Env):
         self.screen.blit(stuck_text, (10, 170))
         self.screen.blit(action_text, (10, 210))
         self.screen.blit(water_text, (10, 250))
-        self.screen.blit(gold_text, (10, 290))
+        # self.screen.blit(gold_text, (10, 290))
 
         pygame.display.flip()
 
@@ -534,7 +535,7 @@ class GeosearchEnv(gym.Env):
         """Determine the color of a cell based on resources, dust, sunlight, and height"""
         # Check ground truth for resources
         has_water = self.water_ground_truth[i, j]
-        has_gold = self.gold_ground_truth[i, j]
+        # has_gold = self.gold_ground_truth[i, j]
 
         # Get other environmental factors
         dust_level = self.dust_map[i, j]
@@ -545,8 +546,8 @@ class GeosearchEnv(gym.Env):
         # Determine base color from resources
         if has_water:
             base_color = np.array(self.colors["water"])
-        elif has_gold:
-            base_color = np.array(self.colors["gold"])
+        # elif has_gold:
+        #     base_color = np.array(self.colors["gold"])
         else:
             # Base gray color modified by dust
             dust_factor = 1 - dust_level * 1.5
@@ -572,10 +573,12 @@ class GeosearchEnv(gym.Env):
         # returns true if resource is present
         if resource_type == "water":
             return self.water_ground_truth[i, j] > threshold
-        elif resource_type == "gold":
-            return self.gold_ground_truth[i, j] > threshold
+        # elif resource_type == "gold":
+        #     return self.gold_ground_truth[i, j] > threshold
+        # else:
+        #     return self.water_ground_truth[i, j] or self.gold_ground_truth[i, j]
         else:
-            return self.water_ground_truth[i, j] or self.gold_ground_truth[i, j]
+            return self.water_ground_truth[i, j]  # Simplified for water-only
 
     def _get_observation(self):
         """Return the current observation as a dictionary matching self.observation_space."""
@@ -584,7 +587,7 @@ class GeosearchEnv(gym.Env):
         sunlight_level = Utils.calculate_sunlight_level(sunlight_map, self.agent_pos[0], self.agent_pos[1])
         dust = Utils.calculate_dust(self.agent_pos, self.dust_map)
         water_prob = self.water_probability[self.agent_pos[0], self.agent_pos[1]]
-        gold_prob = self.gold_probability[self.agent_pos[0], self.agent_pos[1]]
+        # gold_prob = self.gold_probability[self.agent_pos[0], self.agent_pos[1]]
 
         obs_dict = {
             'height': np.array([height], dtype=np.float32),
@@ -592,8 +595,8 @@ class GeosearchEnv(gym.Env):
             'position': np.array(self.agent_pos, dtype=np.float32),
             'sunlight': np.array([sunlight_level], dtype=np.float32),
             'dust': np.array([dust], dtype=np.float32),
-            'water_prob': np.array([water_prob], dtype=np.float32),
-            'gold_prob': np.array([gold_prob], dtype=np.float32)
+            'water_prob': np.array([water_prob], dtype=np.float32)
+            # ,'gold_prob': np.array([gold_prob], dtype=np.float32)
         }
         return obs_dict
 
