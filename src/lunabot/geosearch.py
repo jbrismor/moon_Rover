@@ -26,12 +26,13 @@ class GeosearchEnv(gym.Env):
             'height': spaces.Box(low=-50, high=50, shape=(1,), dtype=np.float32),
             'battery': spaces.Box(low=0, high=87900, shape=(1,), dtype=np.float32), # changed height from 58600 to 73250
             'position': spaces.Box(low=np.array([0, 0]), 
-                                 high=np.array([self.grid_height-1, self.grid_width-1]), 
-                                 shape=(2,), dtype=np.float32),
+                                high=np.array([self.grid_height-1, self.grid_width-1]), 
+                                shape=(2,), dtype=np.float32),
             'sunlight': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
             'dust': spaces.Box(low=0, high=0.5, shape=(1,), dtype=np.float32),
-            'water_prob': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
-            'gold_prob': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
+            'local_probs': spaces.Box(low=0, high=1, shape=(25,), dtype=np.float32),  # 5x5 grid flattened
+            'local_conf': spaces.Box(low=0, high=1, shape=(25,), dtype=np.float32),   # 5x5 grid flattened
+            'cardinal_probs': spaces.Box(low=0, high=1, shape=(4,), dtype=np.float32)  # N,S,E,W averages
         })
 
         # Lunar characteristics  
@@ -56,7 +57,7 @@ class GeosearchEnv(gym.Env):
 
         # Generate water and gold distributions
         self.water_probability = Utils.generate_water_probability(self.grid_height, self.grid_width)
-        self.gold_probability = Utils.generate_gold_probability(self.grid_height, self.grid_width)
+        # self.gold_probability = Utils.generate_gold_probability(self.grid_height, self.grid_width)
 
         # Generate ground truths sequentially to avoid overlap
         self.water_ground_truth = Utils.generate_ground_truth(
@@ -66,18 +67,21 @@ class GeosearchEnv(gym.Env):
             existing_resources=None  # Water goes first
         )
 
-        self.gold_ground_truth = Utils.generate_ground_truth(
-            self.gold_probability, 
-            noise_factor=0.2, 
-            threshold=0.2,
-            existing_resources=self.water_ground_truth  # Gold avoids water locations
-        )
+        # Initialize confidence map
+        self.confidence_map = np.zeros((self.grid_height, self.grid_width))
+
+        # self.gold_ground_truth = Utils.generate_ground_truth(
+        #     self.gold_probability, 
+        #     noise_factor=0.2, 
+        #     threshold=0.2,
+        #     existing_resources=self.water_ground_truth  # Gold avoids water locations
+        # )
 
         # Add new tracking for gathered resources and their decay
         self.gathered_counts = {}  # Dictionary to track number of times each location was gathered
         self.max_gather_times = 20  # Number of times before rewards reach 0 # change from 8 to 20
         self.base_water_reward = 5000  # Base reward for gathering water # change from 200 to 500
-        self.base_gold_reward = 6000   # Base reward for gathering gold # change from 300 to 600
+        # self.base_gold_reward = 6000   # Base reward for gathering gold # change from 300 to 600
         self.gather_decay = 250        # Reward decay per gathering
 
         # Add new state tracking variables
@@ -104,8 +108,8 @@ class GeosearchEnv(gym.Env):
 
         # Resource tracking
         self.resources_gathered = {
-            'water': {'count': 0, 'locations': set()},
-            'gold': {'count': 0, 'locations': set()}
+            'water': {'count': 0, 'locations': set()}
+            #,'gold': {'count': 0, 'locations': set()}
         }
 
         # Rendering setup
@@ -173,8 +177,9 @@ class GeosearchEnv(gym.Env):
                     gather_count = self.gathered_counts.get(loc_key, 0)
                     
                     # Calculate decay factor (linear decay)
-                    decay_factor = max(0, 1 - (gather_count * self.gather_decay / 
-                                             (self.base_water_reward if self.water_ground_truth[i, j] else self.base_gold_reward)))
+                    decay_factor = max(0, 1 - (gather_count * self.gather_decay / self.base_water_reward))
+                    # decay_factor = max(0, 1 - (gather_count * self.gather_decay / 
+                    #                          (self.base_water_reward if self.water_ground_truth[i, j] else self.base_gold_reward)))
                     
                     # Update gather count
                     self.gathered_counts[loc_key] = gather_count + 1
@@ -186,11 +191,11 @@ class GeosearchEnv(gym.Env):
                             self.resources_gathered['water']['count'] += 1
                             self.resources_gathered['water']['locations'].add(loc_key)
                     
-                    if self.gold_ground_truth[i, j]:
-                        total_reward += self.base_gold_reward * decay_factor
-                        if loc_key not in self.resources_gathered['gold']['locations']:
-                            self.resources_gathered['gold']['count'] += 1
-                            self.resources_gathered['gold']['locations'].add(loc_key)
+                    # if self.gold_ground_truth[i, j]:
+                    #     total_reward += self.base_gold_reward * decay_factor
+                    #     if loc_key not in self.resources_gathered['gold']['locations']:
+                    #         self.resources_gathered['gold']['count'] += 1
+                    #         self.resources_gathered['gold']['locations'].add(loc_key)
                     
                     # Update probabilities in surrounding area
                     Utils._update_resource_probabilities(self, i, j)
@@ -253,7 +258,7 @@ class GeosearchEnv(gym.Env):
 
         # Generate water and gold distributions
         self.water_probability = Utils.generate_water_probability(self.grid_height, self.grid_width)
-        self.gold_probability = Utils.generate_gold_probability(self.grid_height, self.grid_width)
+        # self.gold_probability = Utils.generate_gold_probability(self.grid_height, self.grid_width)
 
         # Generate ground truths sequentially to avoid overlap
         self.water_ground_truth = Utils.generate_ground_truth(
@@ -263,12 +268,15 @@ class GeosearchEnv(gym.Env):
             existing_resources=None  # Water goes first
         )
 
-        self.gold_ground_truth = Utils.generate_ground_truth(
-            self.gold_probability, 
-            noise_factor=0.2, 
-            threshold=0.2,
-            existing_resources=self.water_ground_truth  # Gold avoids water locations
-        )
+        # Reset confidence map
+        self.confidence_map = np.zeros((self.grid_height, self.grid_width))
+
+        # self.gold_ground_truth = Utils.generate_ground_truth(
+        #     self.gold_probability, 
+        #     noise_factor=0.2, 
+        #     threshold=0.2,
+        #     existing_resources=self.water_ground_truth  # Gold avoids water locations
+        # )
 
         # Clear gathered resources tracking
         self.gathered_counts = {}
@@ -309,8 +317,8 @@ class GeosearchEnv(gym.Env):
         
         # Reset resource tracking
         self.resources_gathered = {
-            'water': {'count': 0, 'locations': set()},
-            'gold': {'count': 0, 'locations': set()}
+            'water': {'count': 0, 'locations': set()}
+            #,'gold': {'count': 0, 'locations': set()}
         }
 
         obs = self._get_observation()
@@ -445,9 +453,9 @@ class GeosearchEnv(gym.Env):
 
         # Add resource tracking display
         water_count = self.resources_gathered['water']['count']
-        gold_count = self.resources_gathered['gold']['count']
+        # gold_count = self.resources_gathered['gold']['count']
         water_text = font.render(f"Water: {water_count}", True, self.colors["white"])
-        gold_text = font.render(f"Gold: {gold_count}", True, self.colors["white"])
+        # gold_text = font.render(f"Gold: {gold_count}", True, self.colors["white"])
 
         # Display all text on the screen
         self.screen.blit(time_text, (10, 10))
@@ -457,7 +465,7 @@ class GeosearchEnv(gym.Env):
         self.screen.blit(stuck_text, (10, 170))
         self.screen.blit(action_text, (10, 210))
         self.screen.blit(water_text, (10, 250))
-        self.screen.blit(gold_text, (10, 290))
+        # self.screen.blit(gold_text, (10, 290))
 
         pygame.display.flip()
 
@@ -534,7 +542,7 @@ class GeosearchEnv(gym.Env):
         """Determine the color of a cell based on resources, dust, sunlight, and height"""
         # Check ground truth for resources
         has_water = self.water_ground_truth[i, j]
-        has_gold = self.gold_ground_truth[i, j]
+        # has_gold = self.gold_ground_truth[i, j]
 
         # Get other environmental factors
         dust_level = self.dust_map[i, j]
@@ -545,8 +553,8 @@ class GeosearchEnv(gym.Env):
         # Determine base color from resources
         if has_water:
             base_color = np.array(self.colors["water"])
-        elif has_gold:
-            base_color = np.array(self.colors["gold"])
+        # elif has_gold:
+        #     base_color = np.array(self.colors["gold"])
         else:
             # Base gray color modified by dust
             dust_factor = 1 - dust_level * 1.5
@@ -572,19 +580,102 @@ class GeosearchEnv(gym.Env):
         # returns true if resource is present
         if resource_type == "water":
             return self.water_ground_truth[i, j] > threshold
-        elif resource_type == "gold":
-            return self.gold_ground_truth[i, j] > threshold
+        # elif resource_type == "gold":
+        #     return self.gold_ground_truth[i, j] > threshold
+        # else:
+        #     return self.water_ground_truth[i, j] or self.gold_ground_truth[i, j]
         else:
-            return self.water_ground_truth[i, j] or self.gold_ground_truth[i, j]
+            return self.water_ground_truth[i, j]  # Simplified for water-only
 
+    def _get_local_view(self, center_i, center_j, size=2):
+        """
+        Get local view with proper edge handling.
+        """
+        # Create padded arrays to handle edge cases
+        padded_probs = np.zeros((2*size + 1, 2*size + 1), dtype=np.float32)
+        padded_conf = np.zeros((2*size + 1, 2*size + 1), dtype=np.float32)
+        
+        # Calculate valid ranges for both source and target arrays
+        i_start_source = max(0, center_i - size)
+        i_end_source = min(self.grid_height, center_i + size + 1)
+        j_start_source = max(0, center_j - size)
+        j_end_source = min(self.grid_width, center_j + size + 1)
+        
+        i_start_target = size - (center_i - i_start_source)
+        j_start_target = size - (center_j - j_start_source)
+        
+        # Copy valid data from environment to padded arrays
+        source_slice_i = slice(i_start_source, i_end_source)
+        source_slice_j = slice(j_start_source, j_end_source)
+        target_slice_i = slice(i_start_target, i_start_target + (i_end_source - i_start_source))
+        target_slice_j = slice(j_start_target, j_start_target + (j_end_source - j_start_source))
+        
+        padded_probs[target_slice_i, target_slice_j] = self.water_probability[source_slice_i, source_slice_j]
+        padded_conf[target_slice_i, target_slice_j] = self.confidence_map[source_slice_i, source_slice_j]
+        
+        return padded_probs.flatten(), padded_conf.flatten()
+    
+    def _get_cardinal_averages(self, center_i, center_j, local_size=2):
+        """
+        Optimized calculation of average probabilities in each cardinal direction.
+        """
+        # Initialize counters and sums
+        directions = {
+            'north': {'sum': 0.0, 'count': 0},
+            'south': {'sum': 0.0, 'count': 0},
+            'east': {'sum': 0.0, 'count': 0},
+            'west': {'sum': 0.0, 'count': 0}
+        }
+        
+        # Calculate local view bounds to exclude
+        local_min_i = max(0, center_i - local_size)
+        local_max_i = min(self.grid_height - 1, center_i + local_size)
+        local_min_j = max(0, center_j - local_size)
+        local_max_j = min(self.grid_width - 1, center_j + local_size)
+        
+        # Process rows above center (north)
+        if center_i > 0:
+            north_slice = self.water_probability[0:local_min_i, :]
+            directions['north']['sum'] = np.sum(north_slice)
+            directions['north']['count'] = north_slice.size
+        
+        # Process rows below center (south)
+        if center_i < self.grid_height - 1:
+            south_slice = self.water_probability[local_max_i+1:, :]
+            directions['south']['sum'] = np.sum(south_slice)
+            directions['south']['count'] = south_slice.size
+        
+        # Process columns left of center (west)
+        if center_j > 0:
+            west_slice = self.water_probability[:, 0:local_min_j]
+            directions['west']['sum'] = np.sum(west_slice)
+            directions['west']['count'] = west_slice.size
+        
+        # Process columns right of center (east)
+        if center_j < self.grid_width - 1:
+            east_slice = self.water_probability[:, local_max_j+1:]
+            directions['east']['sum'] = np.sum(east_slice)
+            directions['east']['count'] = east_slice.size
+        
+        # Calculate averages
+        averages = np.zeros(4, dtype=np.float32)
+        for idx, direction in enumerate(['north', 'south', 'east', 'west']):
+            if directions[direction]['count'] > 0:
+                averages[idx] = directions[direction]['sum'] / directions[direction]['count']
+        
+        return averages
+    
     def _get_observation(self):
         """Return the current observation as a dictionary matching self.observation_space."""
+        # Get basic observations
         height = Utils.calculate_height(self.agent_pos, self.height_map)
         sunlight_map = Utils.calculate_sunlight_map(self.grid_height, self.grid_width, self.height_map, self.current_day)
         sunlight_level = Utils.calculate_sunlight_level(sunlight_map, self.agent_pos[0], self.agent_pos[1])
         dust = Utils.calculate_dust(self.agent_pos, self.dust_map)
-        water_prob = self.water_probability[self.agent_pos[0], self.agent_pos[1]]
-        gold_prob = self.gold_probability[self.agent_pos[0], self.agent_pos[1]]
+        
+        # Get local view and cardinal averages
+        local_probs, local_conf = self._get_local_view(self.agent_pos[0], self.agent_pos[1])
+        cardinal_probs = self._get_cardinal_averages(self.agent_pos[0], self.agent_pos[1])
 
         obs_dict = {
             'height': np.array([height], dtype=np.float32),
@@ -592,21 +683,8 @@ class GeosearchEnv(gym.Env):
             'position': np.array(self.agent_pos, dtype=np.float32),
             'sunlight': np.array([sunlight_level], dtype=np.float32),
             'dust': np.array([dust], dtype=np.float32),
-            'water_prob': np.array([water_prob], dtype=np.float32),
-            'gold_prob': np.array([gold_prob], dtype=np.float32)
+            'local_probs': local_probs,
+            'local_conf': local_conf,
+            'cardinal_probs': cardinal_probs
         }
         return obs_dict
-
-        # # Flatten them:
-        # obs = np.concatenate([
-        #     obs_dict['height'],
-        #     obs_dict['battery'],
-        #     obs_dict['position'],
-        #     obs_dict['sunlight'],
-        #     obs_dict['dust'],
-        #     obs_dict['water_prob'],
-        #     obs_dict['gold_prob'],
-        # ]).astype(np.float32)
-        
-        # # Adjust observation space to a single Box in __init__ accordingly
-        # return obs
