@@ -24,7 +24,7 @@ class GeosearchEnv(gym.Env):
         # Define proper observation space for continuous values
         self.observation_space = spaces.Dict({
             'height': spaces.Box(low=-50, high=50, shape=(1,), dtype=np.float32),
-            'battery': spaces.Box(low=0, high=73250, shape=(1,), dtype=np.float32), # changed height from 58600 to 73250
+            'battery': spaces.Box(low=0, high=87900, shape=(1,), dtype=np.float32), # changed height from 58600 to 73250
             'position': spaces.Box(low=np.array([0, 0]), 
                                  high=np.array([self.grid_height-1, self.grid_width-1]), 
                                  shape=(2,), dtype=np.float32),
@@ -88,7 +88,7 @@ class GeosearchEnv(gym.Env):
         # Energy system constants
         self.num_solar_panels = 3  # Using 3 panels as suggested
         self.solar_panel_output = 272.2  # Watts per panel
-        self.battery_capacity = 87900  # Wh (two batteries) # change from 58600 to 87900 (2.5 batteries)
+        self.battery_capacity = 87900  # Wh (two batteries) # change from 58600 to 87900 (3 batteries)
         self.base_consumption = 800  # Wh per day # change from 1200 to 800
         self.movement_base_energy = 13890  # Wh per 1000m
         self.gathering_energy = 9000  # Wh # changed from 20000 to 9000
