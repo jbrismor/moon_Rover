@@ -26,13 +26,13 @@ class GeosearchEnv(gym.Env):
             'height': spaces.Box(low=-50, high=50, shape=(1,), dtype=np.float32),
             'battery': spaces.Box(low=0, high=58600, shape=(1,), dtype=np.float32),
             'position': spaces.Box(low=np.array([0, 0]), 
-                                 high=np.array([self.grid_height-1, self.grid_width-1]), 
-                                 shape=(2,), dtype=np.float32),
+                                high=np.array([self.grid_height-1, self.grid_width-1]), 
+                                shape=(2,), dtype=np.float32),
             'sunlight': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
             'dust': spaces.Box(low=0, high=0.5, shape=(1,), dtype=np.float32),
-            'water_prob': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
-            'confidence': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
-            #,'gold_prob': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
+            'local_probs': spaces.Box(low=0, high=1, shape=(25,), dtype=np.float32),  # 5x5 grid flattened
+            'local_conf': spaces.Box(low=0, high=1, shape=(25,), dtype=np.float32),   # 5x5 grid flattened
+            'cardinal_probs': spaces.Box(low=0, high=1, shape=(4,), dtype=np.float32)  # N,S,E,W averages
         })
 
         # Lunar characteristics  
@@ -587,15 +587,95 @@ class GeosearchEnv(gym.Env):
         else:
             return self.water_ground_truth[i, j]  # Simplified for water-only
 
+    def _get_local_view(self, center_i, center_j, size=2):
+        """
+        Get local view with proper edge handling.
+        """
+        # Create padded arrays to handle edge cases
+        padded_probs = np.zeros((2*size + 1, 2*size + 1), dtype=np.float32)
+        padded_conf = np.zeros((2*size + 1, 2*size + 1), dtype=np.float32)
+        
+        # Calculate valid ranges for both source and target arrays
+        i_start_source = max(0, center_i - size)
+        i_end_source = min(self.grid_height, center_i + size + 1)
+        j_start_source = max(0, center_j - size)
+        j_end_source = min(self.grid_width, center_j + size + 1)
+        
+        i_start_target = size - (center_i - i_start_source)
+        j_start_target = size - (center_j - j_start_source)
+        
+        # Copy valid data from environment to padded arrays
+        source_slice_i = slice(i_start_source, i_end_source)
+        source_slice_j = slice(j_start_source, j_end_source)
+        target_slice_i = slice(i_start_target, i_start_target + (i_end_source - i_start_source))
+        target_slice_j = slice(j_start_target, j_start_target + (j_end_source - j_start_source))
+        
+        padded_probs[target_slice_i, target_slice_j] = self.water_probability[source_slice_i, source_slice_j]
+        padded_conf[target_slice_i, target_slice_j] = self.confidence_map[source_slice_i, source_slice_j]
+        
+        return padded_probs.flatten(), padded_conf.flatten()
+    
+    def _get_cardinal_averages(self, center_i, center_j, local_size=2):
+        """
+        Optimized calculation of average probabilities in each cardinal direction.
+        """
+        # Initialize counters and sums
+        directions = {
+            'north': {'sum': 0.0, 'count': 0},
+            'south': {'sum': 0.0, 'count': 0},
+            'east': {'sum': 0.0, 'count': 0},
+            'west': {'sum': 0.0, 'count': 0}
+        }
+        
+        # Calculate local view bounds to exclude
+        local_min_i = max(0, center_i - local_size)
+        local_max_i = min(self.grid_height - 1, center_i + local_size)
+        local_min_j = max(0, center_j - local_size)
+        local_max_j = min(self.grid_width - 1, center_j + local_size)
+        
+        # Process rows above center (north)
+        if center_i > 0:
+            north_slice = self.water_probability[0:local_min_i, :]
+            directions['north']['sum'] = np.sum(north_slice)
+            directions['north']['count'] = north_slice.size
+        
+        # Process rows below center (south)
+        if center_i < self.grid_height - 1:
+            south_slice = self.water_probability[local_max_i+1:, :]
+            directions['south']['sum'] = np.sum(south_slice)
+            directions['south']['count'] = south_slice.size
+        
+        # Process columns left of center (west)
+        if center_j > 0:
+            west_slice = self.water_probability[:, 0:local_min_j]
+            directions['west']['sum'] = np.sum(west_slice)
+            directions['west']['count'] = west_slice.size
+        
+        # Process columns right of center (east)
+        if center_j < self.grid_width - 1:
+            east_slice = self.water_probability[:, local_max_j+1:]
+            directions['east']['sum'] = np.sum(east_slice)
+            directions['east']['count'] = east_slice.size
+        
+        # Calculate averages
+        averages = np.zeros(4, dtype=np.float32)
+        for idx, direction in enumerate(['north', 'south', 'east', 'west']):
+            if directions[direction]['count'] > 0:
+                averages[idx] = directions[direction]['sum'] / directions[direction]['count']
+        
+        return averages
+    
     def _get_observation(self):
         """Return the current observation as a dictionary matching self.observation_space."""
+        # Get basic observations
         height = Utils.calculate_height(self.agent_pos, self.height_map)
         sunlight_map = Utils.calculate_sunlight_map(self.grid_height, self.grid_width, self.height_map, self.current_day)
         sunlight_level = Utils.calculate_sunlight_level(sunlight_map, self.agent_pos[0], self.agent_pos[1])
         dust = Utils.calculate_dust(self.agent_pos, self.dust_map)
-        water_prob = self.water_probability[self.agent_pos[0], self.agent_pos[1]]
-        confidence = self.confidence_map[self.agent_pos[0], self.agent_pos[1]]  # get confidence value for current position
-        # gold_prob = self.gold_probability[self.agent_pos[0], self.agent_pos[1]]
+        
+        # Get local view and cardinal averages
+        local_probs, local_conf = self._get_local_view(self.agent_pos[0], self.agent_pos[1])
+        cardinal_probs = self._get_cardinal_averages(self.agent_pos[0], self.agent_pos[1])
 
         obs_dict = {
             'height': np.array([height], dtype=np.float32),
@@ -603,22 +683,8 @@ class GeosearchEnv(gym.Env):
             'position': np.array(self.agent_pos, dtype=np.float32),
             'sunlight': np.array([sunlight_level], dtype=np.float32),
             'dust': np.array([dust], dtype=np.float32),
-            'water_prob': np.array([water_prob], dtype=np.float32),
-            'confidence': np.array([confidence], dtype=np.float32)
-            # ,'gold_prob': np.array([gold_prob], dtype=np.float32)
+            'local_probs': local_probs,
+            'local_conf': local_conf,
+            'cardinal_probs': cardinal_probs
         }
         return obs_dict
-
-        # # Flatten them:
-        # obs = np.concatenate([
-        #     obs_dict['height'],
-        #     obs_dict['battery'],
-        #     obs_dict['position'],
-        #     obs_dict['sunlight'],
-        #     obs_dict['dust'],
-        #     obs_dict['water_prob'],
-        #     obs_dict['gold_prob'],
-        # ]).astype(np.float32)
-        
-        # # Adjust observation space to a single Box in __init__ accordingly
-        # return obs
