@@ -560,7 +560,7 @@ class Utils:
             energy_consumed += movement_energy
         
         if action == 5:  # Gathering action
-            energy_consumed += 12000  # Additional energy for gathering # change from 20000 to 12000
+            energy_consumed += 9000  # Additional energy for gathering # change from 20000 to 9000
         
         # 3. Calculate new battery level
         next_bat_level = current_bat_level + energy_generated - energy_consumed

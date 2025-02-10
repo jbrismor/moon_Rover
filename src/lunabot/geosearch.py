@@ -88,10 +88,10 @@ class GeosearchEnv(gym.Env):
         # Energy system constants
         self.num_solar_panels = 3  # Using 3 panels as suggested
         self.solar_panel_output = 272.2  # Watts per panel
-        self.battery_capacity = 73250  # Wh (two batteries) # change from 58600 to 73250 (2.5 batteries)
-        self.base_consumption = 1200  # Wh per day
+        self.battery_capacity = 87900  # Wh (two batteries) # change from 58600 to 87900 (2.5 batteries)
+        self.base_consumption = 800  # Wh per day # change from 1200 to 800
         self.movement_base_energy = 13890  # Wh per 1000m
-        self.gathering_energy = 20000  # Wh
+        self.gathering_energy = 9000  # Wh # changed from 20000 to 9000
 
         # Position and battery tracking
         self.agent_pos = None
