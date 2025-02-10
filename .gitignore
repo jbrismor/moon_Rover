@@ -1,1 +1,13 @@
 .DS_Store
+
+# ignore all checkpoint files and folders
+checkpoints/
+
+# ignore compiled Python files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ignore egg-info directories
+*.egg-info/
