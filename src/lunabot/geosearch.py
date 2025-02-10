@@ -24,7 +24,7 @@ class GeosearchEnv(gym.Env):
         # Define proper observation space for continuous values
         self.observation_space = spaces.Dict({
             'height': spaces.Box(low=-50, high=50, shape=(1,), dtype=np.float32),
-            'battery': spaces.Box(low=0, high=58600, shape=(1,), dtype=np.float32),
+            'battery': spaces.Box(low=0, high=73250, shape=(1,), dtype=np.float32), # changed height from 58600 to 73250
             'position': spaces.Box(low=np.array([0, 0]), 
                                  high=np.array([self.grid_height-1, self.grid_width-1]), 
                                  shape=(2,), dtype=np.float32),
@@ -506,7 +506,7 @@ class GeosearchEnv(gym.Env):
             next_height = Utils.calculate_height(next_pos, self.height_map)
             if Utils.check_crash(current_height, next_height):
                 terminated = True
-                reward_adjustment -= 100000  # Crash penalty
+                reward_adjustment -= 1000000  # Crash penalty
         
         return terminated, truncated, reward_adjustment
 
