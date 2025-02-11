@@ -442,8 +442,8 @@ class Utils:
         third_ring_size = max(3, int(env_size * 0.3 / 2))   # 30% total width → ~15% from center
         
         # Update factors for each ring
-        first_ring_factor = 0.1
-        second_ring_factor = 0.05
+        first_ring_factor = 0.05 # changed from 0.1 to 0.05
+        second_ring_factor = 0.025 # changed from 0.05 to 0.025
         third_ring_factor = 0.01
 
         # Confidence factors for each ring
@@ -569,7 +569,7 @@ class Utils:
         energy_generated = daily_solar_output * sunlight
         
         # 2. Calculate energy consumption
-        energy_consumed = 800  # Base consumption # change from 1200 to 800
+        energy_consumed = 900  # Base consumption # change from 1200 to 900
         
         if action != 4:  # If not staying still
             # Movement energy calculation
@@ -580,11 +580,11 @@ class Utils:
                             Utils.calculate_height(current_pos, height_map))
             height_factor = 0.5 + (height_diff / 100)  # 0.5-1.5x multiplier (since height diff is -50 to 50)
             
-            movement_energy = 13890 * dust_factor * height_factor
+            movement_energy = 1890 * dust_factor * height_factor # change 13890 to 1890
             energy_consumed += movement_energy
         
         if action == 5:  # Gathering action
-            energy_consumed += 9000  # Additional energy for gathering # change from 20000 to 9000
+            energy_consumed += 4000  # Additional energy for gathering # change from 20000 to 9000
         
         # 3. Calculate new battery level
         next_bat_level = current_bat_level + energy_generated - energy_consumed
