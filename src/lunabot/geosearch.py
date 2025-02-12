@@ -22,18 +22,21 @@ class GeosearchEnv(gym.Env):
         self.action_space = spaces.Discrete(6)
 
         # Lunar characteristics  
-        self.height_map = Utils.generate_height_map(grid_height=self.grid_height,
-                                                    grid_width=self.grid_width,
-                                                    scale=0.1,
-                                                    smoothing=2.0,
-                                                    seed=37,
-                                                    craters=True,
-                                                    num_craters=3,
-                                                    min_radius=1.0,
-                                                    max_radius=3.0,
-                                                    min_depth=0.5,
-                                                    max_depth=2.0,
-                                                    rim_ratio=0.3)
+        self.height_map = Utils.generate_height_map(
+            grid_height=self.grid_height,
+            grid_width=self.grid_width,
+            scale=0.1,
+            smoothing=2.0,
+            seed=37,
+            craters=False,          # Disable crater generation
+            num_craters=0,          # (Optional: also set number of craters to 0)
+            min_radius=1.0,
+            max_radius=3.0,
+            min_depth=0.5,
+            max_depth=2.0,
+            rim_ratio=0.3,
+            add_cliffs=False         # Disable cliff formations
+        )
             
         # Initial dust map (will be reset each episode)
         self.dust_map = Utils.generate_dust_map(self.height_map, self.grid_height, self.grid_width)
@@ -66,7 +69,7 @@ class GeosearchEnv(gym.Env):
         # Add new tracking for gathered resources and their decay
         self.gathered_counts = {}  # Dictionary to track number of times each location was gathered
         self.max_gather_times = 20  # Number of times before rewards reach 0 # change from 8 to 20
-        self.base_water_reward = 5000  # Base reward for gathering water # change from 200 to 500
+        self.base_water_reward = 10000  # Base reward for gathering water # change from 200 to 10000
         # self.base_gold_reward = 6000   # Base reward for gathering gold # change from 300 to 600
         self.gather_decay = 250        # Reward decay per gathering
 
@@ -81,7 +84,7 @@ class GeosearchEnv(gym.Env):
         self.battery_capacity = 87900  # Wh (two batteries) # change from 58600 to 87900 (3 batteries)
         self.base_consumption = 900  # Wh per day # change from 1200 to 900
         self.movement_base_energy = 1890  # Wh per 1000m # changed from 13890 to 1890
-        self.gathering_energy = 4000  # Wh # changed from 20000 to 4000
+        self.gathering_energy = 1000  # Wh # changed from 20000 to 1000
 
         # Position and battery tracking
         self.agent_pos = None
@@ -172,84 +175,429 @@ class GeosearchEnv(gym.Env):
         return local_heights.flatten()
 
 
+    # def step(self, action):
+    #     """Apply the action and advance time by one hour"""
+    #     # Store the action being attempted
+    #     self.last_action = action
+
+    #     # Determine base reward based on the action type:
+    #     if action in [0, 1, 2, 3]:
+    #         # Movement actions (up, down, left, right): reward +1 for taking a step
+    #         total_reward = 1
+    #     elif action == 4:
+    #         # Staying in place
+    #         if not self.is_stuck:
+    #             total_reward = -5  # Penalty for not moving when not stuck
+    #         else:
+    #             total_reward = 0   # If stuck, you might not penalize staying
+    #     elif action == 5:
+    #         # Gather action – start with a base reward of 0;
+    #         # any reward will be added below if the gathering is successful.
+    #         total_reward = 0
+
+    #     next_pos = self.agent_pos
+    #     i, j = self.agent_pos
+
+    #     # Get observation first to ensure it's always defined
+    #     obs = self._get_observation()
+
+    #     # Check terminal states before movement
+    #     terminated, truncated, reward_adjustment = self._check_terminal_states(next_pos)
+    #     total_reward += reward_adjustment
+
+    #     if terminated:
+    #         return obs, total_reward, terminated, truncated, {}
+        
+    #     # Check for month completion reward
+    #     current_month = self.current_day // self.month_length
+    #     if current_month > self.last_month_reward:
+    #         total_reward += 1000  # bonus for surviving another month # change from 100 to 1000
+    #         self.last_month_reward = current_month
+
+    #     # movement logic - only execute if not stuck
+    #     if not self.is_stuck and self.current_bat_level > 0:
+    #         if action == 0 and i > 0:  # Up
+    #             next_pos = (i - 1, j)
+    #         elif action == 1 and i < self.grid_height - 1:  # Down
+    #             next_pos = (i + 1, j)
+    #         elif action == 2 and j > 0:  # Left
+    #             next_pos = (i, j - 1)
+    #         elif action == 3 and j < self.grid_width - 1:  # Right
+    #             next_pos = (i, j + 1)
+    #         elif action == 4:  # Staying in place
+    #             next_pos = (i, j)
+    #         elif action == 5:  # Gather
+    #             # Only allow gathering if there's enough battery
+    #             if self.current_bat_level >= self.gathering_energy:
+    #                 # Get location key for tracking
+    #                 loc_key = f"{i},{j}"
+    #                 gather_count = self.gathered_counts.get(loc_key, 0)
+                    
+    #                 # Calculate decay factor (linear decay)
+    #                 decay_factor = max(0, 1 - (gather_count * self.gather_decay / self.base_water_reward))
+    #                 # decay_factor = max(0, 1 - (gather_count * self.gather_decay / 
+    #                 #                          (self.base_water_reward if self.water_ground_truth[i, j] else self.base_gold_reward)))
+                    
+    #                 # Update gather count
+    #                 self.gathered_counts[loc_key] = gather_count + 1
+                    
+    #                 # Apply rewards with decay and track resources
+    #                 if self.water_ground_truth[i, j]:
+    #                     total_reward += self.base_water_reward * decay_factor
+    #                     if loc_key not in self.resources_gathered['water']['locations']:
+    #                         self.resources_gathered['water']['count'] += 1
+    #                         self.resources_gathered['water']['locations'].add(loc_key)
+                    
+    #                 # if self.gold_ground_truth[i, j]:
+    #                 #     total_reward += self.base_gold_reward * decay_factor
+    #                 #     if loc_key not in self.resources_gathered['gold']['locations']:
+    #                 #         self.resources_gathered['gold']['count'] += 1
+    #                 #         self.resources_gathered['gold']['locations'].add(loc_key)
+                    
+    #                 # Update probabilities in surrounding area
+    #                 Utils._update_resource_probabilities(self, i, j)
+
+    #     # get height and sunlight info for next position
+    #     height = Utils.calculate_height(next_pos, self.height_map)
+    #     sunlight_map = Utils.calculate_sunlight_map(self.grid_height, self.grid_width, self.height_map, self.current_day)
+    #     sunlight_level = Utils.calculate_sunlight_level(sunlight_map, next_pos[0], next_pos[1])
+
+    #     # Calculate new battery level with updated energy system
+    #     next_bat_level, battery_depleted = Utils.calculate_bat(
+    #         self.agent_pos,
+    #         next_pos,
+    #         self.current_bat_level,
+    #         self.battery_capacity,
+    #         sunlight_map,
+    #         self.height_map,
+    #         self.dust_map,
+    #         action,
+    #         self.num_solar_panels
+    #     )
+
+    #     # Update position if not stuck
+    #     if not self.is_stuck and self.current_bat_level > 0:
+    #         self.agent_pos = next_pos
+
+    #     # Advance time
+    #     self.current_day = self.current_day + 1
+
+    #     # Battery level rewards
+    #     if next_bat_level < (0.05 * self.battery_capacity): # change from 0.2 to 0.1 battery level
+    #         total_reward -= 10  # Penalty for low battery # change from 20 to 10
+    #     elif next_bat_level > (0.95 * self.battery_capacity):
+    #         total_reward -= 25  # Penalty for overcharged battery # change from 15 to 25
+
+    #     # Update current battery level
+    #     self.current_bat_level = next_bat_level
+
+    #     # Check for episode end due to max steps
+    #     if self.current_day >= self.max_episode_steps:
+    #         terminated = True
+    #         truncated = True
+
+    #     info = {
+    #         'current_day': self.current_day,
+    #         'resources': self.resources_gathered,
+    #         'battery_level': self.current_bat_level,
+    #         'is_stuck': self.is_stuck
+    #     }
+
+    #     return obs, total_reward, terminated, truncated, info
+
+    # def step(self, action):
+    #     """Apply the action and advance time by one hour"""
+    #     # Store the action being attempted.
+    #     self.last_action = action
+
+    #     # --- Base Reward Setup ---
+    #     if action in [0, 1, 2, 3]:
+    #         # Movement actions: reward +1 for moving.
+    #         total_reward = 1
+    #     elif action == 4:
+    #         # Staying in place: if not stuck, incur a penalty of -5.
+    #         total_reward = -5 if not self.is_stuck else 0
+    #     elif action == 5:
+    #         # Gathering action: start with 0 reward (will add bonus below).
+    #         total_reward = 0
+
+    #     # --- Reward Shaping: Encourage Moving Toward Higher Water Probabilities ---
+    #     # Save current water probability at the agent's position.
+    #     i, j = self.agent_pos
+    #     current_prob = self.water_probability[i, j]
+
+    #     # Determine next position based on the action (if not stuck and if battery > 0).
+    #     next_pos = self.agent_pos  # Default: no movement.
+    #     if not self.is_stuck and self.current_bat_level > 0:
+    #         if action == 0 and i > 0:          # Up
+    #             next_pos = (i - 1, j)
+    #         elif action == 1 and i < self.grid_height - 1:  # Down
+    #             next_pos = (i + 1, j)
+    #         elif action == 2 and j > 0:          # Left
+    #             next_pos = (i, j - 1)
+    #         elif action == 3 and j < self.grid_width - 1:   # Right
+    #             next_pos = (i, j + 1)
+    #         elif action == 4:  # Stay
+    #             next_pos = (i, j)
+    #         elif action == 5:
+    #             # Gathering action generally does not change position.
+    #             next_pos = (i, j)
+
+    #     # For movement actions, compute a potential-based shaping reward.
+    #     if action in [0, 1, 2, 3]:
+    #         next_prob = self.water_probability[next_pos[0], next_pos[1]]
+    #         # The shaping reward is proportional to the difference in water probabilities.
+    #         reward_shaping_factor = 5.0  # (Tunable hyperparameter)
+    #         shaping_reward = reward_shaping_factor * (next_prob - current_prob)
+    #         total_reward += shaping_reward
+
+    #     # --- Terminal Check ---
+    #     terminated, truncated, reward_adjustment = self._check_terminal_states(next_pos)
+    #     total_reward += reward_adjustment
+    #     if terminated:
+    #         return self._get_observation(), total_reward, terminated, truncated, {}
+
+    #     # --- Monthly Bonus ---
+    #     current_month = self.current_day // self.month_length
+    #     if current_month > self.last_month_reward:
+    #         total_reward += 1000  # Bonus for surviving an additional month.
+    #         self.last_month_reward = current_month
+
+    #     # --- Action-Specific Logic ---
+    #     if action == 5:  # Gather action.
+    #         if self.current_bat_level >= self.gathering_energy:
+    #             loc_key = f"{i},{j}"
+    #             gather_count = self.gathered_counts.get(loc_key, 0)
+    #             # Compute a linear decay factor for repeated gathering at the same location.
+    #             decay_factor = max(0, 1 - (gather_count * self.gather_decay / self.base_water_reward))
+    #             self.gathered_counts[loc_key] = gather_count + 1
+
+    #             if self.water_ground_truth[i, j]:
+    #                 total_reward += self.base_water_reward * decay_factor
+    #                 if loc_key not in self.resources_gathered['water']['locations']:
+    #                     self.resources_gathered['water']['count'] += 1
+    #                     self.resources_gathered['water']['locations'].add(loc_key)
+    #             else:
+    #                 # Currently, there is no penalty for gathering in the wrong place.
+    #                 # To add a penalty, uncomment the following line:
+    #                 total_reward -= 5
+    #                 pass
+
+    #     # --- Environment Dynamics ---
+    #     # Get current environmental factors for the next position.
+    #     height = Utils.calculate_height(next_pos, self.height_map)
+    #     sunlight_map = Utils.calculate_sunlight_map(self.grid_height, self.grid_width, self.height_map, self.current_day)
+    #     sunlight_level = Utils.calculate_sunlight_level(sunlight_map, next_pos[0], next_pos[1])
+
+    #     # Calculate new battery level and check if battery is depleted.
+    #     next_bat_level, battery_depleted = Utils.calculate_bat(
+    #         self.agent_pos,
+    #         next_pos,
+    #         self.current_bat_level,
+    #         self.battery_capacity,
+    #         sunlight_map,
+    #         self.height_map,
+    #         self.dust_map,
+    #         action,
+    #         self.num_solar_panels
+    #     )
+
+    #     # Update the agent's position if not stuck and if there is remaining battery.
+    #     if not self.is_stuck and self.current_bat_level > 0:
+    #         self.agent_pos = next_pos
+
+    #     # Advance time (e.g., one day or one time unit).
+    #     self.current_day += 1
+
+    #     # --- Battery Level Penalties ---
+    #     if next_bat_level < (0.1 * self.battery_capacity):
+    #         total_reward -= 20  # Penalty for critically low battery.
+    #     elif next_bat_level > (0.95 * self.battery_capacity):
+    #         total_reward -= 15  # Penalty for overcharged battery conditions.
+
+    #     self.current_bat_level = next_bat_level
+
+    #     # --- Episode Termination Check ---
+    #     if self.current_day >= self.max_episode_steps:
+    #         terminated = True
+    #         truncated = True
+
+    #     info = {
+    #         'current_day': self.current_day,
+    #         'resources': self.resources_gathered,
+    #         'battery_level': self.current_bat_level,
+    #         'is_stuck': self.is_stuck
+    #     }
+
+    #     return self._get_observation(), total_reward, terminated, truncated, info
+
+    ##############################################################################################################
+    ############################# NEW FUNCTIONS ##################################################################
+    ##############################################################################################################
+
+    def _local_average_water_prob(self, center, radius=2):
+        """
+        Returns the average water probability in a local patch around `center`.
+        The patch is (2*radius+1) x (2*radius+1).
+        """
+        i, j = center
+        i_min = max(0, i - radius)
+        i_max = min(self.grid_height, i + radius + 1)
+        j_min = max(0, j - radius)
+        j_max = min(self.grid_width, j + radius + 1)
+
+        patch = self.water_probability[i_min:i_max, j_min:j_max]
+        return np.mean(patch)
+
+    def _gather_potential(self, pos, radius=1):
+        """
+        Returns a 'potential' value for how good it is to gather near `pos`.
+        For simplicity, we use the max water probability in a local patch.
+        Then scale that by some fraction of the base water reward so the maximum
+        potential won't exceed a fraction of the actual gather reward.
+        """
+        i, j = pos
+        i_min = max(0, i - radius)
+        i_max = min(self.grid_height, i + radius + 1)
+        j_min = max(0, j - radius)
+        j_max = min(self.grid_width, j + radius + 1)
+
+        patch = self.water_probability[i_min:i_max, j_min:j_max]
+        max_prob = np.max(patch)  # highest water prob near pos
+
+        # For example, scale by (base_water_reward / 100).
+        # If base_water_reward=5000, potential could be up to 50 if max_prob=1.
+        potential = max_prob * (self.base_water_reward / 100.0)
+        return potential
+
     def step(self, action):
-        """Apply the action and advance time by one hour"""
-        # Store the action being attempted
+        """
+        Apply the action (0=Up, 1=Down, 2=Left, 3=Right, 4=Stay, 5=Gather)
+        and advance time by one day (or hour) in the environment.
+        """
+        # Record the chosen action for rendering/analysis.
         self.last_action = action
 
-        # initialize reward and next position
-        total_reward = -1  # Base reward for each step
-        next_pos = self.agent_pos
+        # -------------------
+        # 1) Base Action Rewards
+        # -------------------
+        if action in [0, 1, 2, 3]:
+            # Movement actions
+            total_reward = 1   # +1 reward for moving
+        elif action == 4:
+            # Stay in place
+            total_reward = -5 if not self.is_stuck else 0
+        elif action == 5:
+            # Gather action
+            total_reward = 0   # We'll add gather reward if water is found
+        else:
+            # Should never happen in a Discrete(6) environment
+            total_reward = 0
+
+        # -------------------
+        # 2) Prepare for Shaping
+        # -------------------
+        current_local_prob = self._local_average_water_prob(self.agent_pos, radius=2)
+        current_phi = self._gather_potential(self.agent_pos, radius=1)
+
         i, j = self.agent_pos
+        next_pos = self.agent_pos  # Default to same position.
 
-        # Get observation first to ensure it's always defined
-        obs = self._get_observation()
-
-        # Check terminal states before movement
-        terminated, truncated, reward_adjustment = self._check_terminal_states(next_pos)
-        total_reward += reward_adjustment
-
-        if terminated:
-            return obs, total_reward, terminated, truncated, {}
-        
-        # Check for month completion reward
-        current_month = self.current_day // self.month_length
-        if current_month > self.last_month_reward:
-            total_reward += 1000  # bonus for surviving another month # change from 100 to 1000
-            self.last_month_reward = current_month
-
-        # movement logic - only execute if not stuck
+        # -------------------
+        # 3) Movement/Next Pos Logic
+        # -------------------
         if not self.is_stuck and self.current_bat_level > 0:
-            if action == 0 and i > 0:  # Up
+            if action == 0 and i > 0:             # Up
                 next_pos = (i - 1, j)
             elif action == 1 and i < self.grid_height - 1:  # Down
                 next_pos = (i + 1, j)
-            elif action == 2 and j > 0:  # Left
+            elif action == 2 and j > 0:           # Left
                 next_pos = (i, j - 1)
-            elif action == 3 and j < self.grid_width - 1:  # Right
+            elif action == 3 and j < self.grid_width - 1:   # Right
                 next_pos = (i, j + 1)
-            elif action == 4:  # Staying in place
-                next_pos = (i, j)
-            elif action == 5:  # Gather
-                # Only allow gathering if there's enough battery
-                if self.current_bat_level >= self.gathering_energy:
-                    # Get location key for tracking
-                    loc_key = f"{i},{j}"
-                    gather_count = self.gathered_counts.get(loc_key, 0)
-                    
-                    # Calculate decay factor (linear decay)
-                    decay_factor = max(0, 1 - (gather_count * self.gather_decay / self.base_water_reward))
-                    # decay_factor = max(0, 1 - (gather_count * self.gather_decay / 
-                    #                          (self.base_water_reward if self.water_ground_truth[i, j] else self.base_gold_reward)))
-                    
-                    # Update gather count
-                    self.gathered_counts[loc_key] = gather_count + 1
-                    
-                    # Apply rewards with decay and track resources
-                    if self.water_ground_truth[i, j]:
-                        total_reward += self.base_water_reward * decay_factor
-                        if loc_key not in self.resources_gathered['water']['locations']:
-                            self.resources_gathered['water']['count'] += 1
-                            self.resources_gathered['water']['locations'].add(loc_key)
-                    
-                    # if self.gold_ground_truth[i, j]:
-                    #     total_reward += self.base_gold_reward * decay_factor
-                    #     if loc_key not in self.resources_gathered['gold']['locations']:
-                    #         self.resources_gathered['gold']['count'] += 1
-                    #         self.resources_gathered['gold']['locations'].add(loc_key)
-                    
-                    # Update probabilities in surrounding area
-                    Utils._update_resource_probabilities(self, i, j)
+            # action == 4 => Stay put
+            # action == 5 => Gather does not move agent
 
-        # get height and sunlight info for next position
-        height = Utils.calculate_height(next_pos, self.height_map)
-        sunlight_map = Utils.calculate_sunlight_map(self.grid_height, self.grid_width, self.height_map, self.current_day)
-        sunlight_level = Utils.calculate_sunlight_level(sunlight_map, next_pos[0], next_pos[1])
+        # -------------------
+        # 4) Reward Shaping for Movement
+        # -------------------
+        if action in [0, 1, 2, 3]:
+            # Compare local water probs around current vs. next pos.
+            next_local_prob = self._local_average_water_prob(next_pos, radius=2)
+            shaping_factor = 3.0  # tune as needed
+            shaping_reward = shaping_factor * (next_local_prob - current_local_prob)
+            total_reward += shaping_reward
 
-        # Calculate new battery level with updated energy system
+            # Potential-based shaping for gathering
+            next_phi = self._gather_potential(next_pos, radius=1)
+            potential_diff = next_phi - current_phi
+            total_reward += potential_diff
+
+        # -------------------
+        # 5) Check Terminal States (before gather)
+        # -------------------
+        terminated, truncated, reward_adjustment = self._check_terminal_states(next_pos)
+        total_reward += reward_adjustment
+        if terminated:
+            return self._get_observation(), total_reward, terminated, truncated, {}
+
+        # -------------------
+        # 6) Monthly Bonus
+        # -------------------
+        current_month = self.current_day // self.month_length
+        if current_month > self.last_month_reward:
+            total_reward += 1000
+            self.last_month_reward = current_month
+
+        # -------------------
+        # 7) Gather Logic
+        # -------------------
+        if action == 5 and self.current_bat_level >= self.gathering_energy:
+            loc_key = f"{i},{j}"
+            gather_count = self.gathered_counts.get(loc_key, 0)
+
+            # Decay factor for repeated gathers in the same spot (when there's water).
+            decay_factor = max(0, 1 - (gather_count * self.gather_decay / self.base_water_reward))
+
+            # Update gather count
+            self.gathered_counts[loc_key] = gather_count + 1
+
+            if self.water_ground_truth[i, j]:
+                # There's water => big reward
+                total_reward += self.base_water_reward * decay_factor
+
+                # Track resource if not already done
+                if loc_key not in self.resources_gathered['water']['locations']:
+                    self.resources_gathered['water']['count'] += 1
+                    self.resources_gathered['water']['locations'].add(loc_key)
+            else:
+                # NO WATER => new logic:
+                if gather_count == 0:
+                    # First time gathering in this waterless cell => small reward
+                    total_reward += 1
+                else:
+                    # Subsequent gathers => small penalty
+                    total_reward -= 1
+
+            # Update environment's water/confidence maps
+            Utils._update_resource_probabilities(self, i, j)
+
+        # -------------------
+        # 8) Environment Dynamics
+        # -------------------
+        if not self.is_stuck and self.current_bat_level > 0:
+            self.agent_pos = next_pos
+
+        self.current_day += 1
+
+        from_pos = (i, j)
+        to_pos = next_pos
+        sunlight_map = Utils.calculate_sunlight_map(
+            self.grid_height, self.grid_width, self.height_map, self.current_day
+        )
         next_bat_level, battery_depleted = Utils.calculate_bat(
-            self.agent_pos,
-            next_pos,
+            from_pos,
+            to_pos,
             self.current_bat_level,
             self.battery_capacity,
             sunlight_map,
@@ -258,24 +606,17 @@ class GeosearchEnv(gym.Env):
             action,
             self.num_solar_panels
         )
-
-        # Update position if not stuck
-        if not self.is_stuck and self.current_bat_level > 0:
-            self.agent_pos = next_pos
-
-        # Advance time
-        self.current_day = self.current_day + 1
-
-        # Battery level rewards
-        if next_bat_level < (0.1 * self.battery_capacity): # change from 0.2 to 0.1 battery level
-            total_reward -= 20  # Penalty for low battery
-        elif next_bat_level > (0.95 * self.battery_capacity):
-            total_reward -= 15  # Penalty for overcharged battery
-
-        # Update current battery level
         self.current_bat_level = next_bat_level
 
-        # Check for episode end due to max steps
+        # Battery-based penalties
+        if next_bat_level < (0.1 * self.battery_capacity):
+            total_reward -= 20
+        elif next_bat_level > (0.95 * self.battery_capacity):
+            total_reward -= 15
+
+        # -------------------
+        # 9) Episode End Check
+        # -------------------
         if self.current_day >= self.max_episode_steps:
             terminated = True
             truncated = True
@@ -287,7 +628,9 @@ class GeosearchEnv(gym.Env):
             'is_stuck': self.is_stuck
         }
 
-        return obs, total_reward, terminated, truncated, info
+        return self._get_observation(), total_reward, terminated, truncated, info
+
+
 
     def reset(self, seed=None, options=None):
         if seed is not None:
@@ -541,10 +884,10 @@ class GeosearchEnv(gym.Env):
         if np.random.random() < stuck_prob:
             self.is_stuck = True
             self.stuck_days += 1
-            reward_adjustment -= 30  # dailyu penalty for being stuck
-            if self.stuck_days >= 5:  # Terminal state after 5 days stuck
+            reward_adjustment -= 5  # dailyu penalty for being stuck # change from 30 to 20
+            if self.stuck_days >= 25:  # Terminal state after 5 days stuck # changed to 25
                 terminated = True
-                reward_adjustment -= 100000  # additional terminal p[enalty for being stuck too long
+                reward_adjustment -= 10000  # additional terminal p[enalty for being stuck too long# change from 100000 to 10000
         else:
             self.is_stuck = False
             self.stuck_days = 0
@@ -555,7 +898,7 @@ class GeosearchEnv(gym.Env):
             next_height = Utils.calculate_height(next_pos, self.height_map)
             if Utils.check_crash(current_height, next_height):
                 terminated = True
-                reward_adjustment -= 1000000  # Crash penalty
+                reward_adjustment -= 10000  # Crash penalty # changed from 100000 to 10000
         
         return terminated, truncated, reward_adjustment
 

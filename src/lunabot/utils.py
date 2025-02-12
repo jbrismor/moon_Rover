@@ -584,7 +584,7 @@ class Utils:
             energy_consumed += movement_energy
         
         if action == 5:  # Gathering action
-            energy_consumed += 4000  # Additional energy for gathering # change from 20000 to 9000
+            energy_consumed += 1000  # Additional energy for gathering # change from 20000 to 3000
         
         # 3. Calculate new battery level
         next_bat_level = current_bat_level + energy_generated - energy_consumed
@@ -666,47 +666,13 @@ class Utils:
 
     @staticmethod
     def draw_arrow(screen, x, y, direction, size=50, color=(0, 0, 0)):
-        """Draws an arrow at the given (x, y) location, pointing in the given direction."""
+        """Draws an arrow (or circle) at (x, y), for the given direction:
+        0=Up, 1=Down, 2=Left, 3=Right, 4=Stay, 5=Gather."""
         half_size = size // 2
         arrow_head_size = size * 0.6  # Adjust size of the arrowhead
-        shaft_length = size * 0.35  # Length of the shaft
+        shaft_length = size * 0.35    # Length of the shaft
 
-        # Calculate the start and end points of the shaft
-        if direction == 0:  # Left
-            start = (x + half_size, y)
-            end = (x - shaft_length, y)
-            arrow_tip = (x - half_size, y)
-            arrow_head = [
-                (arrow_tip[0], arrow_tip[1] - arrow_head_size // 2),
-                (arrow_tip[0], arrow_tip[1] + arrow_head_size // 2),
-                (arrow_tip[0] - arrow_head_size, arrow_tip[1]),
-            ]
-
-            pygame.draw.line(
-                screen, color, start, end, 5
-            )  # Draw the shaft of the arrow (line)
-            pygame.draw.polygon(
-                screen, color, arrow_head
-            )  # Draw the arrowhead (triangle)
-
-        elif direction == 1:  # Right
-            start = (x - half_size, y)
-            end = (x + shaft_length, y)
-            arrow_tip = (x + half_size, y)
-            arrow_head = [
-                (arrow_tip[0], arrow_tip[1] - arrow_head_size // 2),
-                (arrow_tip[0], arrow_tip[1] + arrow_head_size // 2),
-                (arrow_tip[0] + arrow_head_size, arrow_tip[1]),
-            ]
-
-            pygame.draw.line(
-                screen, color, start, end, 5
-            )  # Draw the shaft of the arrow (line)
-            pygame.draw.polygon(
-                screen, color, arrow_head
-            )  # Draw the arrowhead (triangle)
-
-        elif direction == 2:  # Up
+        if direction == 0:  # Up
             start = (x, y + half_size)
             end = (x, y - shaft_length)
             arrow_tip = (x, y - half_size)
@@ -716,14 +682,10 @@ class Utils:
                 (arrow_tip[0], arrow_tip[1] - arrow_head_size),
             ]
 
-            pygame.draw.line(
-                screen, color, start, end, 5
-            )  # Draw the shaft of the arrow (line)
-            pygame.draw.polygon(
-                screen, color, arrow_head
-            )  # Draw the arrowhead (triangle)
+            pygame.draw.line(screen, color, start, end, 5)
+            pygame.draw.polygon(screen, color, arrow_head)
 
-        elif direction == 3:  # Down
+        elif direction == 1:  # Down
             start = (x, y - half_size)
             end = (x, y + shaft_length)
             arrow_tip = (x, y + half_size)
@@ -733,15 +695,37 @@ class Utils:
                 (arrow_tip[0], arrow_tip[1] + arrow_head_size),
             ]
 
-            pygame.draw.line(
-                screen, color, start, end, 5
-            )  # Draw the shaft of the arrow (line)
-            pygame.draw.polygon(
-                screen, color, arrow_head
-            )  # Draw the arrowhead (triangle)
+            pygame.draw.line(screen, color, start, end, 5)
+            pygame.draw.polygon(screen, color, arrow_head)
 
-        elif direction == 4 or direction == 5:  # Stay in place/gather
-            # Draw a circle
+        elif direction == 2:  # Left
+            start = (x + half_size, y)
+            end = (x - shaft_length, y)
+            arrow_tip = (x - half_size, y)
+            arrow_head = [
+                (arrow_tip[0], arrow_tip[1] - arrow_head_size // 2),
+                (arrow_tip[0], arrow_tip[1] + arrow_head_size // 2),
+                (arrow_tip[0] - arrow_head_size, arrow_tip[1]),
+            ]
+
+            pygame.draw.line(screen, color, start, end, 5)
+            pygame.draw.polygon(screen, color, arrow_head)
+
+        elif direction == 3:  # Right
+            start = (x - half_size, y)
+            end = (x + shaft_length, y)
+            arrow_tip = (x + half_size, y)
+            arrow_head = [
+                (arrow_tip[0], arrow_tip[1] - arrow_head_size // 2),
+                (arrow_tip[0], arrow_tip[1] + arrow_head_size // 2),
+                (arrow_tip[0] + arrow_head_size, arrow_tip[1]),
+            ]
+
+            pygame.draw.line(screen, color, start, end, 5)
+            pygame.draw.polygon(screen, color, arrow_head)
+
+        elif direction == 4 or direction == 5:  # Stay or Gather
+            # Draw a circle in place
             pygame.draw.circle(screen, color, (x, y), size // 3, 5)
 
     @staticmethod
