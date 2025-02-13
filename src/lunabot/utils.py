@@ -361,18 +361,45 @@ class Utils:
         
         return prob_map
 
+    # @staticmethod    
+    # def clear_landing_zone(probability_map, grid_height, grid_width, zone_size=3):
+    #     """Zero out probabilities in the landing zone"""
+    #     center_y = grid_height // 2
+    #     center_x = grid_width // 2
+    #     half_zone = zone_size // 2
+        
+    #     probability_map[
+    #         center_y - half_zone : center_y + half_zone + 1,
+    #         center_x - half_zone : center_x + half_zone + 1
+    #     ] = 0
+        
+    #     return probability_map
+
     @staticmethod    
     def clear_landing_zone(probability_map, grid_height, grid_width, zone_size=3):
-        """Zero out probabilities in the landing zone"""
+        """Reduce probabilities in the landing zone to ~10% of original."""
         center_y = grid_height // 2
         center_x = grid_width // 2
         half_zone = zone_size // 2
-        
+
+        # Slice out the center patch
+        center_patch = probability_map[
+            center_y - half_zone : center_y + half_zone + 1,
+            center_x - half_zone : center_x + half_zone + 1
+        ]
+
+        # Option A: Scale existing values to e.g. 10% 
+        center_patch *= 0.1
+
+        # Option B: Or directly set it to some small random uniform
+        # center_patch[:] = np.random.uniform(0.0, 0.1, center_patch.shape)
+
+        # Put it back (though the slice is in-place, so not strictly necessary)
         probability_map[
             center_y - half_zone : center_y + half_zone + 1,
             center_x - half_zone : center_x + half_zone + 1
-        ] = 0
-        
+        ] = center_patch
+
         return probability_map
 
     @staticmethod
