@@ -81,8 +81,8 @@ class Utils:
         return final_dust
 
     @staticmethod
-    def generate_height_map(grid_height: int=35,
-                            grid_width: int=35,
+    def generate_height_map(grid_height: int=15,
+                            grid_width: int=15,
                             scale=0.1,
                             smoothing=2.0,
                             seed=None,
@@ -597,22 +597,48 @@ class Utils:
         
         return [next_bat_level, False]
     
+    # @staticmethod
+    # def calculate_death_probability(current_day, max_probability=0.05):
+    #     """
+    #     Calculate probability of random death using sigmoid function.
+    #     Probability increases from 0 to max_probability over 365 days.
+        
+    #     Args:
+    #         current_day (int): Current day number
+    #         max_probability (float): Maximum probability of death (default 0.05 or 5%)
+        
+    #     Returns:
+    #         float: Probability of death for the current day
+    #     """
+    #     k = 0.02  # Steepness of sigmoid curve
+    #     x0 = 182.5  # Midpoint (day 365/2)
+    #     return max_probability / (1 + np.exp(-k * (current_day - x0)))
+
     @staticmethod
     def calculate_death_probability(current_day, max_probability=0.05):
         """
-        Calculate probability of random death using sigmoid function.
-        Probability increases from 0 to max_probability over 365 days.
-        
-        Args:
-            current_day (int): Current day number
-            max_probability (float): Maximum probability of death (default 0.05 or 5%)
-        
-        Returns:
-            float: Probability of death for the current day
+        Piecewise function:
+        - 0% chance for days < 250
+        - Sigmoid ramp from 0..5% in [250..365]
+        - 5% constant after day 365
         """
-        k = 0.02  # Steepness of sigmoid curve
-        x0 = 182.5  # Midpoint (day 365/2)
-        return max_probability / (1 + np.exp(-k * (current_day - x0)))
+        # 1) No death before day 250
+        if current_day < 250:
+            return 0.0
+
+        # 2) Death is capped at 5% after day 265
+        if current_day > 265:
+            return max_probability
+
+        # 3) Sigmoid ramp from day=250..365
+        #    We'll define midpoint=257.5 => the 15-day window.
+        #    Adjust k to control steepness. k=1.0 works as a start.
+        x0 = 307   # midpoint between 250 and 365
+        k = 1.0      # steepness; you can tune (e.g. 0.5 or 2.0)
+        # Compute the fraction going from 0..1 across [250..365].
+        fraction = 1.0 / (1.0 + np.exp(-k * (current_day - x0)))
+        # Multiply by max_probability (5%):
+        return max_probability * fraction    
 
     @staticmethod
     def calculate_stuck_probability(dust_level):

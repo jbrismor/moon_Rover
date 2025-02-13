@@ -17,8 +17,8 @@ class GeosearchEnv(gym.Env):
         super(GeosearchEnv, self).__init__()
 
         # Grid setup
-        self.grid_height = 35
-        self.grid_width = 35
+        self.grid_height = 15
+        self.grid_width = 15
         self.action_space = spaces.Discrete(6)
 
         # Lunar characteristics  
@@ -483,7 +483,7 @@ class GeosearchEnv(gym.Env):
         # -------------------
         if action in [0, 1, 2, 3]:
             # Movement actions
-            total_reward = 1   # +1 reward for moving
+            total_reward = 0   # +1 reward for moving # change to 0
         elif action == 4:
             # Stay in place
             total_reward = -5 if not self.is_stuck else 0
@@ -524,14 +524,14 @@ class GeosearchEnv(gym.Env):
         if action in [0, 1, 2, 3]:
             # Compare local water probs around current vs. next pos.
             next_local_prob = self._local_average_water_prob(next_pos, radius=2)
-            shaping_factor = 3.0  # tune as needed
+            shaping_factor = 1.0  # tune as needed
             shaping_reward = shaping_factor * (next_local_prob - current_local_prob)
             total_reward += shaping_reward
 
-            # Potential-based shaping for gathering
-            next_phi = self._gather_potential(next_pos, radius=1)
-            potential_diff = next_phi - current_phi
-            total_reward += potential_diff
+            # # Potential-based shaping for gathering # changed
+            # next_phi = self._gather_potential(next_pos, radius=1)
+            # potential_diff = next_phi - current_phi
+            # total_reward += potential_diff
 
         # -------------------
         # 5) Check Terminal States (before gather)
@@ -553,32 +553,34 @@ class GeosearchEnv(gym.Env):
         # 7) Gather Logic
         # -------------------
         if action == 5 and self.current_bat_level >= self.gathering_energy:
+            # -- (A) Add shaping reward for gather attempts, based on water prob. --
+            gather_prob = self.water_probability[i, j]
+            gather_shaping_scale = 5.0  # pick any scale you like (e.g., 10, 20, 50, etc.)
+            gather_shaping_reward = gather_prob * gather_shaping_scale
+            total_reward += gather_shaping_reward
+
+            # -- (B) Rest of your existing gather code --
             loc_key = f"{i},{j}"
             gather_count = self.gathered_counts.get(loc_key, 0)
 
-            # Decay factor for repeated gathers in the same spot (when there's water).
+            # Decay factor if there's repeated gathering on the same cell
             decay_factor = max(0, 1 - (gather_count * self.gather_decay / self.base_water_reward))
 
             # Update gather count
             self.gathered_counts[loc_key] = gather_count + 1
 
             if self.water_ground_truth[i, j]:
-                # There's water => big reward
+                # Actually has water => huge reward
                 total_reward += self.base_water_reward * decay_factor
 
-                # Track resource if not already done
+                # Track resources if not already done
                 if loc_key not in self.resources_gathered['water']['locations']:
                     self.resources_gathered['water']['count'] += 1
                     self.resources_gathered['water']['locations'].add(loc_key)
             else:
-                # NO WATER => new logic:
-                if gather_count == 0:
-                    # First time gathering in this waterless cell => small reward
-                    total_reward += 1
-                else:
-                    # Subsequent gathers => small penalty
-                    total_reward -= 1
-
+                # If you want a penalty for gathering where there's no water, you can still add that here
+                pass
+        
             # Update environment's water/confidence maps
             Utils._update_resource_probabilities(self, i, j)
 
