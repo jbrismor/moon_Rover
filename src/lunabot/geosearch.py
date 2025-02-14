@@ -16,9 +16,13 @@ class GeosearchEnv(gym.Env):
     def __init__(self, render_mode=None):
         super(GeosearchEnv, self).__init__()
 
+        self.reward_count = 0
+        self.reward_mean = 0.0
+        self.reward_m2 = 0.0 
+
         # Grid setup
-        self.grid_height = 15
-        self.grid_width = 15
+        self.grid_height = 20
+        self.grid_width = 20
         self.action_space = spaces.Discrete(6)
 
         # Lunar characteristics  
@@ -120,24 +124,19 @@ class GeosearchEnv(gym.Env):
             "base_gray": (128, 128, 128),
         }
 
-        # Define proper observation space for continuous values
         self.observation_space = spaces.Dict({
-            'ring_heights': spaces.Box(low=0, high=1, shape=(25,), dtype=np.float32),  # Normalized heights
-            'battery': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),  # Normalized battery
-            'position': spaces.Box(
-                low=np.array([0, 0]),
-                high=np.array([1, 1]),  # Normalized position
-                shape=(2,),
-                dtype=np.float32
-            ),
-            'sunlight': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),  # Already normalized
-            'dust': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),  # Normalized dust
-            'water_probs': spaces.Box(low=0, high=1, shape=(self.grid_height * self.grid_width,), dtype=np.float32),  # Already normalized
+            'ring_heights': spaces.Box(low=0, high=1, shape=(25,), dtype=np.float32),  # normalized heights
+            'battery': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),          # normalized battery
+            'position': spaces.Box(low=np.array([0, 0]), high=np.array([1, 1]), shape=(2,), dtype=np.float32),  # normalized position
+            'sunlight': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),         # normalized sunlight
+            'dust': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),             # normalized dust
+            'water_map': spaces.Box(low=0, high=1, shape=(2, self.grid_height, self.grid_width), dtype=np.float32),  # two channels
         })
+
 
     def _get_local_heights(self, center_i, center_j, size=2):
         """
-        Returns a 5×5 patch of the height_map centered on (center_i, center_j),
+        Returns a 5x5 patch of the height_map centered on (center_i, center_j),
         with proper edge handling. Flattened to shape (25,).
         """
         patch_size = 2 * size + 1  # 5 if size=2
@@ -208,7 +207,7 @@ class GeosearchEnv(gym.Env):
         """
         i, j = self.agent_pos
         current_local_prob = self._local_average_water_prob(self.agent_pos, radius=2)
-        current_phi = self._gather_potential(self.agent_pos, radius=1)
+        #current_phi = self._gather_potential(self.agent_pos, radius=1)
         total_reward = 0.0
 
         # --- 1) Movement logic (only if not stuck & battery > 0) ---
@@ -228,18 +227,10 @@ class GeosearchEnv(gym.Env):
         # Only apply if a movement action was taken.
         if action in [0, 1, 2, 3]:
             next_local_prob = self._local_average_water_prob(next_pos, radius=2)
-            next_phi = self._gather_potential(next_pos, radius=1)
-            
-            # 2A) Shaping for water probability difference
-            # e.g. 1.0 => moderate weight. 
-            # You can tune bigger or smaller if you want more or less emphasis.
-            water_shaping_factor = 1.0
-            total_reward += water_shaping_factor * (next_local_prob - current_local_prob)
-            
-            # 2B) Shaping for gather potential difference 
-            # smaller factor because your gather reward is large
-            gather_shaping_factor = 0.05
-            total_reward += gather_shaping_factor * (next_phi - current_phi)
+            # Only add a reward if the new location has a higher water probability.
+            if next_local_prob > current_local_prob:
+                water_shaping_factor = 10.0  # Adjust this factor as needed.
+                total_reward += water_shaping_factor * (next_local_prob - current_local_prob)
 
         # --- 3) Check terminal states (death, stuck, crash) before gather. ---
         terminated, truncated, extra_penalty = self._check_terminal_states(next_pos)
@@ -250,25 +241,25 @@ class GeosearchEnv(gym.Env):
         # --- 4) Monthly survival bonus ---
         current_month = self.current_day // self.month_length
         if current_month > self.last_month_reward:
-            total_reward += 50.0
+            total_reward += 10.0
             self.last_month_reward = current_month
 
         # --- 5) Gather logic ---
         if action == 5 and self.current_bat_level >= self.gathering_energy:
             loc_key = f"{i},{j}"
             gather_count = self.gathered_counts.get(loc_key, 0)
-            decay_factor = max(
-                0, 1.0 - (gather_count * self.gather_decay / self.base_water_reward)
-            )
-            self.gathered_counts[loc_key] = gather_count + 1
 
-            if self.water_ground_truth[i, j]:
-                total_reward += self.base_water_reward * decay_factor
-                if loc_key not in self.resources_gathered['water']['locations']:
-                    self.resources_gathered['water']['count'] += 1
-                    self.resources_gathered['water']['locations'].add(loc_key)
+            # Check if the location has high water probability (e.g., > 0.5)
+            if self.water_probability[i, j] > 0.65:
+                if gather_count == 0:  # Only reward the first time
+                    total_reward += 100  # Small reward for high-probability location
+                else:
+                    total_reward += 0  # No reward for subsequent gathers
             else:
-                total_reward -= 10.0
+                total_reward -= 5  # Small penalty for low-probability location
+
+            # Update gathered counts
+            self.gathered_counts[loc_key] = gather_count + 1
 
             # Update water_probabilities in rings
             Utils._update_resource_probabilities(self, i, j)
@@ -292,12 +283,6 @@ class GeosearchEnv(gym.Env):
         )
         self.current_bat_level = next_bat_level
 
-        # extra penalty for near-empty or near-full battery # Battery change
-        # if next_bat_level < (0.1 * self.battery_capacity):
-        #     total_reward -= 20
-        # elif next_bat_level > (0.95 * self.battery_capacity):
-        #     total_reward -= 15
-
         # --- 8) Check max steps (1 year = 365) ---
         if self.current_day >= self.max_episode_steps:
             terminated = True
@@ -309,9 +294,25 @@ class GeosearchEnv(gym.Env):
             'resources': self.resources_gathered,
             'battery_level': self.current_bat_level,
             'is_stuck': self.is_stuck,
-            # is_water_here for auxiliary label
             'is_water_here': bool(self.water_ground_truth[self.agent_pos[0], self.agent_pos[1]])
         }
+
+        # When updating for each new reward:
+        self.reward_count += 1
+        delta = total_reward - self.reward_mean
+        self.reward_mean += delta / self.reward_count
+        delta2 = total_reward - self.reward_mean
+        self.reward_m2 += delta * delta2
+
+        # Compute standard deviation (avoid division by zero)
+        if self.reward_count > 1:
+            reward_std = np.sqrt(self.reward_m2 / (self.reward_count - 1))
+        else:
+            reward_std = 1.0
+
+        # Normalize the reward
+        total_reward = (total_reward - self.reward_mean) / reward_std
+
         return self._get_observation(), total_reward, terminated, truncated, info
 
 
@@ -639,34 +640,32 @@ class GeosearchEnv(gym.Env):
             return self.water_ground_truth[i, j]  # Simplified for water-only
 
     def _get_observation(self):
-        """Return the current observation as a dictionary with normalized values."""
-        # Normalize heights
+        # Normalize ring heights, battery, position, sunlight, dust as before.
         ring_heights = self._get_local_heights(self.agent_pos[0], self.agent_pos[1], size=2)
         ring_heights = (ring_heights + 50) / 100  # Normalize to [0, 1]
 
-        # Normalize battery level
         battery_level = np.array([self.current_bat_level / self.battery_capacity], dtype=np.float32)
 
-        # Normalize position
         position = np.array([
             self.agent_pos[0] / (self.grid_height - 1),
             self.agent_pos[1] / (self.grid_width - 1)
         ], dtype=np.float32)
 
-        # Sunlight is already normalized
-        sunlight_map = Utils.calculate_sunlight_map(
-            self.grid_height, self.grid_width, self.height_map, self.current_day
-        )
-        sunlight_level = Utils.calculate_sunlight_level(
-            sunlight_map, self.agent_pos[0], self.agent_pos[1]
-        )
-
-        # Normalize dust
+        sunlight_map = Utils.calculate_sunlight_map(self.grid_height, self.grid_width, self.height_map, self.current_day)
+        sunlight_level = Utils.calculate_sunlight_level(sunlight_map, self.agent_pos[0], self.agent_pos[1])
+        
         dust = Utils.calculate_dust(self.agent_pos, self.dust_map)
         dust = np.array([dust * 2], dtype=np.float32)  # Normalize to [0, 1]
 
-        # Water probabilities are already normalized
-        water_probs = self.water_probability.flatten()
+        # Instead of a flattened water probability vector, reshape it to a 20x20 map.
+        water_probs = self.water_probability  # shape: (grid_height, grid_width)
+
+        # Create an agent location mask.
+        agent_mask = np.zeros((self.grid_height, self.grid_width), dtype=np.float32)
+        agent_mask[self.agent_pos[0], self.agent_pos[1]] = 1.0
+
+        # Stack the water probabilities and the agent mask to form a 2-channel image.
+        water_map = np.stack([water_probs, agent_mask], axis=0).astype(np.float32)  # shape: (2, grid_height, grid_width)
 
         obs_dict = {
             'ring_heights': ring_heights,
@@ -674,7 +673,7 @@ class GeosearchEnv(gym.Env):
             'position': position,
             'sunlight': np.array([sunlight_level], dtype=np.float32),
             'dust': dust,
-            'water_probs': water_probs,
+            'water_map': water_map,
         }
 
         return obs_dict
