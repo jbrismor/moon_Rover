@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="lunabot",
-    version="1.2.1",
+    version="2.2.2",
     packages=find_packages(where="src"),
     include_package_data=True,
     package_dir={"": "src"},
