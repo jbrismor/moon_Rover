@@ -1,13 +1,22 @@
 .DS_Store
 
-# ignore all checkpoint files and folders
+# ignore all checkpoint files and folders 
 checkpoints/
 
-# ignore compiled Python files
+# ignore compiled Python files 
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 
-# ignore egg-info directories
+# ignore egg-info directories 
 *.egg-info/
+
+# policy gifs 
+policy_gifs/
+
+# yaml file 
+*.yaml
+
+# training_progress
+training_progress.png
