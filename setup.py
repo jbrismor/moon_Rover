@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="lunabot",
-    version="2.2.2",
+    version="1.1.0",
     packages=find_packages(where="src"),
     include_package_data=True,
     package_dir={"": "src"},
@@ -17,6 +17,6 @@ setup(
         "torch"
     ],
     description="Lunar Geosearch RL environment",
-    author="Jorge Bris Moreno, Billy McGloin",
+    author="Your Name",
     license="MIT",
 )
