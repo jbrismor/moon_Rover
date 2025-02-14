@@ -361,20 +361,6 @@ class Utils:
         
         return prob_map
 
-    # @staticmethod    
-    # def clear_landing_zone(probability_map, grid_height, grid_width, zone_size=3):
-    #     """Zero out probabilities in the landing zone"""
-    #     center_y = grid_height // 2
-    #     center_x = grid_width // 2
-    #     half_zone = zone_size // 2
-        
-    #     probability_map[
-    #         center_y - half_zone : center_y + half_zone + 1,
-    #         center_x - half_zone : center_x + half_zone + 1
-    #     ] = 0
-        
-    #     return probability_map
-
     @staticmethod    
     def clear_landing_zone(probability_map, grid_height, grid_width, zone_size=3):
         """Reduce probabilities in the landing zone to ~10% of original."""
@@ -623,23 +609,6 @@ class Utils:
             next_bat_level = batt_capacity
         
         return [next_bat_level, False]
-    
-    # @staticmethod
-    # def calculate_death_probability(current_day, max_probability=0.05):
-    #     """
-    #     Calculate probability of random death using sigmoid function.
-    #     Probability increases from 0 to max_probability over 365 days.
-        
-    #     Args:
-    #         current_day (int): Current day number
-    #         max_probability (float): Maximum probability of death (default 0.05 or 5%)
-        
-    #     Returns:
-    #         float: Probability of death for the current day
-    #     """
-    #     k = 0.02  # Steepness of sigmoid curve
-    #     x0 = 182.5  # Midpoint (day 365/2)
-    #     return max_probability / (1 + np.exp(-k * (current_day - x0)))
 
     @staticmethod
     def calculate_death_probability(current_day, max_probability=0.05):
@@ -650,7 +619,7 @@ class Utils:
         - 5% constant after day 365
         """
         # 1) No death before day 250
-        if current_day < 250:
+        if current_day < 265:
             return 0.0
 
         # 2) Death is capped at 5% after day 265

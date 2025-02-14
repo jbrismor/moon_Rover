@@ -69,7 +69,7 @@ class GeosearchEnv(gym.Env):
         # Add new tracking for gathered resources and their decay
         self.gathered_counts = {}  # Dictionary to track number of times each location was gathered
         self.max_gather_times = 20  # Number of times before rewards reach 0 # change from 8 to 20
-        self.base_water_reward = 10000  # Base reward for gathering water # change from 200 to 10000
+        self.base_water_reward = 3000  # Base reward for gathering water # change from 200 to 10000
         # self.base_gold_reward = 6000   # Base reward for gathering gold # change from 300 to 600
         self.gather_decay = 250        # Reward decay per gathering
 
@@ -122,25 +122,17 @@ class GeosearchEnv(gym.Env):
 
         # Define proper observation space for continuous values
         self.observation_space = spaces.Dict({
-            'ring_heights': spaces.Box(low=-50, high=50, shape=(25,), dtype=np.float32),
-
-            'battery': spaces.Box(low=0, high=self.battery_capacity, shape=(1,), dtype=np.float32),
-
+            'ring_heights': spaces.Box(low=0, high=1, shape=(25,), dtype=np.float32),  # Normalized heights
+            'battery': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),  # Normalized battery
             'position': spaces.Box(
                 low=np.array([0, 0]),
-                high=np.array([self.grid_height - 1, self.grid_width - 1]),
+                high=np.array([1, 1]),  # Normalized position
                 shape=(2,),
                 dtype=np.float32
             ),
-
-            'sunlight': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
-            'dust': spaces.Box(low=0, high=0.5, shape=(1,), dtype=np.float32),
-
-            # Flattened water probabilities for the entire map: shape = (35*35=1225,)
-            'water_probs': spaces.Box(low=0, high=1, shape=(self.grid_height * self.grid_width,), dtype=np.float32),
-            # 'local_probs': spaces.Box(low=0, high=1, shape=(25,), dtype=np.float32),  # 5x5 grid flattened
-            # 'local_conf': spaces.Box(low=0, high=1, shape=(25,), dtype=np.float32),   # 5x5 grid flattened
-            # 'cardinal_probs': spaces.Box(low=0, high=1, shape=(4,), dtype=np.float32)  # N,S,E,W averages
+            'sunlight': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),  # Already normalized
+            'dust': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),  # Normalized dust
+            'water_probs': spaces.Box(low=0, high=1, shape=(self.grid_height * self.grid_width,), dtype=np.float32),  # Already normalized
         })
 
     def _get_local_heights(self, center_i, center_j, size=2):
@@ -174,266 +166,6 @@ class GeosearchEnv(gym.Env):
         
         return local_heights.flatten()
 
-
-    # def step(self, action):
-    #     """Apply the action and advance time by one hour"""
-    #     # Store the action being attempted
-    #     self.last_action = action
-
-    #     # Determine base reward based on the action type:
-    #     if action in [0, 1, 2, 3]:
-    #         # Movement actions (up, down, left, right): reward +1 for taking a step
-    #         total_reward = 1
-    #     elif action == 4:
-    #         # Staying in place
-    #         if not self.is_stuck:
-    #             total_reward = -5  # Penalty for not moving when not stuck
-    #         else:
-    #             total_reward = 0   # If stuck, you might not penalize staying
-    #     elif action == 5:
-    #         # Gather action – start with a base reward of 0;
-    #         # any reward will be added below if the gathering is successful.
-    #         total_reward = 0
-
-    #     next_pos = self.agent_pos
-    #     i, j = self.agent_pos
-
-    #     # Get observation first to ensure it's always defined
-    #     obs = self._get_observation()
-
-    #     # Check terminal states before movement
-    #     terminated, truncated, reward_adjustment = self._check_terminal_states(next_pos)
-    #     total_reward += reward_adjustment
-
-    #     if terminated:
-    #         return obs, total_reward, terminated, truncated, {}
-        
-    #     # Check for month completion reward
-    #     current_month = self.current_day // self.month_length
-    #     if current_month > self.last_month_reward:
-    #         total_reward += 1000  # bonus for surviving another month # change from 100 to 1000
-    #         self.last_month_reward = current_month
-
-    #     # movement logic - only execute if not stuck
-    #     if not self.is_stuck and self.current_bat_level > 0:
-    #         if action == 0 and i > 0:  # Up
-    #             next_pos = (i - 1, j)
-    #         elif action == 1 and i < self.grid_height - 1:  # Down
-    #             next_pos = (i + 1, j)
-    #         elif action == 2 and j > 0:  # Left
-    #             next_pos = (i, j - 1)
-    #         elif action == 3 and j < self.grid_width - 1:  # Right
-    #             next_pos = (i, j + 1)
-    #         elif action == 4:  # Staying in place
-    #             next_pos = (i, j)
-    #         elif action == 5:  # Gather
-    #             # Only allow gathering if there's enough battery
-    #             if self.current_bat_level >= self.gathering_energy:
-    #                 # Get location key for tracking
-    #                 loc_key = f"{i},{j}"
-    #                 gather_count = self.gathered_counts.get(loc_key, 0)
-                    
-    #                 # Calculate decay factor (linear decay)
-    #                 decay_factor = max(0, 1 - (gather_count * self.gather_decay / self.base_water_reward))
-    #                 # decay_factor = max(0, 1 - (gather_count * self.gather_decay / 
-    #                 #                          (self.base_water_reward if self.water_ground_truth[i, j] else self.base_gold_reward)))
-                    
-    #                 # Update gather count
-    #                 self.gathered_counts[loc_key] = gather_count + 1
-                    
-    #                 # Apply rewards with decay and track resources
-    #                 if self.water_ground_truth[i, j]:
-    #                     total_reward += self.base_water_reward * decay_factor
-    #                     if loc_key not in self.resources_gathered['water']['locations']:
-    #                         self.resources_gathered['water']['count'] += 1
-    #                         self.resources_gathered['water']['locations'].add(loc_key)
-                    
-    #                 # if self.gold_ground_truth[i, j]:
-    #                 #     total_reward += self.base_gold_reward * decay_factor
-    #                 #     if loc_key not in self.resources_gathered['gold']['locations']:
-    #                 #         self.resources_gathered['gold']['count'] += 1
-    #                 #         self.resources_gathered['gold']['locations'].add(loc_key)
-                    
-    #                 # Update probabilities in surrounding area
-    #                 Utils._update_resource_probabilities(self, i, j)
-
-    #     # get height and sunlight info for next position
-    #     height = Utils.calculate_height(next_pos, self.height_map)
-    #     sunlight_map = Utils.calculate_sunlight_map(self.grid_height, self.grid_width, self.height_map, self.current_day)
-    #     sunlight_level = Utils.calculate_sunlight_level(sunlight_map, next_pos[0], next_pos[1])
-
-    #     # Calculate new battery level with updated energy system
-    #     next_bat_level, battery_depleted = Utils.calculate_bat(
-    #         self.agent_pos,
-    #         next_pos,
-    #         self.current_bat_level,
-    #         self.battery_capacity,
-    #         sunlight_map,
-    #         self.height_map,
-    #         self.dust_map,
-    #         action,
-    #         self.num_solar_panels
-    #     )
-
-    #     # Update position if not stuck
-    #     if not self.is_stuck and self.current_bat_level > 0:
-    #         self.agent_pos = next_pos
-
-    #     # Advance time
-    #     self.current_day = self.current_day + 1
-
-    #     # Battery level rewards
-    #     if next_bat_level < (0.05 * self.battery_capacity): # change from 0.2 to 0.1 battery level
-    #         total_reward -= 10  # Penalty for low battery # change from 20 to 10
-    #     elif next_bat_level > (0.95 * self.battery_capacity):
-    #         total_reward -= 25  # Penalty for overcharged battery # change from 15 to 25
-
-    #     # Update current battery level
-    #     self.current_bat_level = next_bat_level
-
-    #     # Check for episode end due to max steps
-    #     if self.current_day >= self.max_episode_steps:
-    #         terminated = True
-    #         truncated = True
-
-    #     info = {
-    #         'current_day': self.current_day,
-    #         'resources': self.resources_gathered,
-    #         'battery_level': self.current_bat_level,
-    #         'is_stuck': self.is_stuck
-    #     }
-
-    #     return obs, total_reward, terminated, truncated, info
-
-    # def step(self, action):
-    #     """Apply the action and advance time by one hour"""
-    #     # Store the action being attempted.
-    #     self.last_action = action
-
-    #     # --- Base Reward Setup ---
-    #     if action in [0, 1, 2, 3]:
-    #         # Movement actions: reward +1 for moving.
-    #         total_reward = 1
-    #     elif action == 4:
-    #         # Staying in place: if not stuck, incur a penalty of -5.
-    #         total_reward = -5 if not self.is_stuck else 0
-    #     elif action == 5:
-    #         # Gathering action: start with 0 reward (will add bonus below).
-    #         total_reward = 0
-
-    #     # --- Reward Shaping: Encourage Moving Toward Higher Water Probabilities ---
-    #     # Save current water probability at the agent's position.
-    #     i, j = self.agent_pos
-    #     current_prob = self.water_probability[i, j]
-
-    #     # Determine next position based on the action (if not stuck and if battery > 0).
-    #     next_pos = self.agent_pos  # Default: no movement.
-    #     if not self.is_stuck and self.current_bat_level > 0:
-    #         if action == 0 and i > 0:          # Up
-    #             next_pos = (i - 1, j)
-    #         elif action == 1 and i < self.grid_height - 1:  # Down
-    #             next_pos = (i + 1, j)
-    #         elif action == 2 and j > 0:          # Left
-    #             next_pos = (i, j - 1)
-    #         elif action == 3 and j < self.grid_width - 1:   # Right
-    #             next_pos = (i, j + 1)
-    #         elif action == 4:  # Stay
-    #             next_pos = (i, j)
-    #         elif action == 5:
-    #             # Gathering action generally does not change position.
-    #             next_pos = (i, j)
-
-    #     # For movement actions, compute a potential-based shaping reward.
-    #     if action in [0, 1, 2, 3]:
-    #         next_prob = self.water_probability[next_pos[0], next_pos[1]]
-    #         # The shaping reward is proportional to the difference in water probabilities.
-    #         reward_shaping_factor = 5.0  # (Tunable hyperparameter)
-    #         shaping_reward = reward_shaping_factor * (next_prob - current_prob)
-    #         total_reward += shaping_reward
-
-    #     # --- Terminal Check ---
-    #     terminated, truncated, reward_adjustment = self._check_terminal_states(next_pos)
-    #     total_reward += reward_adjustment
-    #     if terminated:
-    #         return self._get_observation(), total_reward, terminated, truncated, {}
-
-    #     # --- Monthly Bonus ---
-    #     current_month = self.current_day // self.month_length
-    #     if current_month > self.last_month_reward:
-    #         total_reward += 1000  # Bonus for surviving an additional month.
-    #         self.last_month_reward = current_month
-
-    #     # --- Action-Specific Logic ---
-    #     if action == 5:  # Gather action.
-    #         if self.current_bat_level >= self.gathering_energy:
-    #             loc_key = f"{i},{j}"
-    #             gather_count = self.gathered_counts.get(loc_key, 0)
-    #             # Compute a linear decay factor for repeated gathering at the same location.
-    #             decay_factor = max(0, 1 - (gather_count * self.gather_decay / self.base_water_reward))
-    #             self.gathered_counts[loc_key] = gather_count + 1
-
-    #             if self.water_ground_truth[i, j]:
-    #                 total_reward += self.base_water_reward * decay_factor
-    #                 if loc_key not in self.resources_gathered['water']['locations']:
-    #                     self.resources_gathered['water']['count'] += 1
-    #                     self.resources_gathered['water']['locations'].add(loc_key)
-    #             else:
-    #                 # Currently, there is no penalty for gathering in the wrong place.
-    #                 # To add a penalty, uncomment the following line:
-    #                 total_reward -= 5
-    #                 pass
-
-    #     # --- Environment Dynamics ---
-    #     # Get current environmental factors for the next position.
-    #     height = Utils.calculate_height(next_pos, self.height_map)
-    #     sunlight_map = Utils.calculate_sunlight_map(self.grid_height, self.grid_width, self.height_map, self.current_day)
-    #     sunlight_level = Utils.calculate_sunlight_level(sunlight_map, next_pos[0], next_pos[1])
-
-    #     # Calculate new battery level and check if battery is depleted.
-    #     next_bat_level, battery_depleted = Utils.calculate_bat(
-    #         self.agent_pos,
-    #         next_pos,
-    #         self.current_bat_level,
-    #         self.battery_capacity,
-    #         sunlight_map,
-    #         self.height_map,
-    #         self.dust_map,
-    #         action,
-    #         self.num_solar_panels
-    #     )
-
-    #     # Update the agent's position if not stuck and if there is remaining battery.
-    #     if not self.is_stuck and self.current_bat_level > 0:
-    #         self.agent_pos = next_pos
-
-    #     # Advance time (e.g., one day or one time unit).
-    #     self.current_day += 1
-
-    #     # --- Battery Level Penalties ---
-    #     if next_bat_level < (0.1 * self.battery_capacity):
-    #         total_reward -= 20  # Penalty for critically low battery.
-    #     elif next_bat_level > (0.95 * self.battery_capacity):
-    #         total_reward -= 15  # Penalty for overcharged battery conditions.
-
-    #     self.current_bat_level = next_bat_level
-
-    #     # --- Episode Termination Check ---
-    #     if self.current_day >= self.max_episode_steps:
-    #         terminated = True
-    #         truncated = True
-
-    #     info = {
-    #         'current_day': self.current_day,
-    #         'resources': self.resources_gathered,
-    #         'battery_level': self.current_bat_level,
-    #         'is_stuck': self.is_stuck
-    #     }
-
-    #     return self._get_observation(), total_reward, terminated, truncated, info
-
-    ##############################################################################################################
-    ############################# NEW FUNCTIONS ##################################################################
-    ##############################################################################################################
 
     def _local_average_water_prob(self, center, radius=2):
         """
@@ -518,7 +250,7 @@ class GeosearchEnv(gym.Env):
         # --- 4) Monthly survival bonus ---
         current_month = self.current_day // self.month_length
         if current_month > self.last_month_reward:
-            total_reward += 10.0
+            total_reward += 50.0
             self.last_month_reward = current_month
 
         # --- 5) Gather logic ---
@@ -560,11 +292,11 @@ class GeosearchEnv(gym.Env):
         )
         self.current_bat_level = next_bat_level
 
-        # extra penalty for near-empty or near-full battery
-        if next_bat_level < (0.1 * self.battery_capacity):
-            total_reward -= 20
-        elif next_bat_level > (0.95 * self.battery_capacity):
-            total_reward -= 15
+        # extra penalty for near-empty or near-full battery # Battery change
+        # if next_bat_level < (0.1 * self.battery_capacity):
+        #     total_reward -= 20
+        # elif next_bat_level > (0.95 * self.battery_capacity):
+        #     total_reward -= 15
 
         # --- 8) Check max steps (1 year = 365) ---
         if self.current_day >= self.max_episode_steps:
@@ -606,13 +338,6 @@ class GeosearchEnv(gym.Env):
         # Reset confidence map
         self.confidence_map = np.zeros((self.grid_height, self.grid_width))
 
-        # self.gold_ground_truth = Utils.generate_ground_truth(
-        #     self.gold_probability, 
-        #     noise_factor=0.2, 
-        #     threshold=0.2,
-        #     existing_resources=self.water_ground_truth  # Gold avoids water locations
-        # )
-
         # Clear gathered resources tracking
         self.gathered_counts = {}
 
@@ -631,15 +356,6 @@ class GeosearchEnv(gym.Env):
             random.randint(min_row, max_row),
             random.randint(min_col, max_col),
         )
-        # height = Utils.calculate_height(self.agent_pos, self.height_map)
-
-        # # Precompute sunlight map and extract sunlight level for the starting position
-        # sunlight_map = Utils.calculate_sunlight_map(self.grid_height, self.grid_width, self.height_map, self.current_day)
-        # sunlight_level = Utils.calculate_sunlight_level(
-        #     sunlight_map, self.agent_pos[0], self.agent_pos[1]
-        # )
-
-        # dust = Utils.calculate_dust(self.agent_pos, self.dust_map)
 
         # Reset terminal state tracking
         self.stuck_days = 0
@@ -838,7 +554,7 @@ class GeosearchEnv(gym.Env):
             reward_adjustment -= 5  # dailyu penalty for being stuck # change from 30 to 20
             if self.stuck_days >= 25:  # Terminal state after 5 days stuck # changed to 25
                 terminated = True
-                reward_adjustment -= 10000  # additional terminal p[enalty for being stuck too long# change from 100000 to 10000
+                reward_adjustment -= 4000  # additional terminal p[enalty for being stuck too long# change from 100000 to 10000
         else:
             self.is_stuck = False
             self.stuck_days = 0
@@ -849,7 +565,7 @@ class GeosearchEnv(gym.Env):
             next_height = Utils.calculate_height(next_pos, self.height_map)
             if Utils.check_crash(current_height, next_height):
                 terminated = True
-                reward_adjustment -= 10000  # Crash penalty # changed from 100000 to 10000
+                reward_adjustment -= 4000  # Crash penalty # changed from 100000 to 10000
         
         return terminated, truncated, reward_adjustment
 
@@ -922,111 +638,43 @@ class GeosearchEnv(gym.Env):
         else:
             return self.water_ground_truth[i, j]  # Simplified for water-only
 
-    # def _get_local_view(self, center_i, center_j, size=2):
-    #     """
-    #     Get local view with proper edge handling.
-    #     """
-    #     # Create padded arrays to handle edge cases
-    #     padded_probs = np.zeros((2*size + 1, 2*size + 1), dtype=np.float32)
-    #     padded_conf = np.zeros((2*size + 1, 2*size + 1), dtype=np.float32)
-        
-    #     # Calculate valid ranges for both source and target arrays
-    #     i_start_source = max(0, center_i - size)
-    #     i_end_source = min(self.grid_height, center_i + size + 1)
-    #     j_start_source = max(0, center_j - size)
-    #     j_end_source = min(self.grid_width, center_j + size + 1)
-        
-    #     i_start_target = size - (center_i - i_start_source)
-    #     j_start_target = size - (center_j - j_start_source)
-        
-    #     # Copy valid data from environment to padded arrays
-    #     source_slice_i = slice(i_start_source, i_end_source)
-    #     source_slice_j = slice(j_start_source, j_end_source)
-    #     target_slice_i = slice(i_start_target, i_start_target + (i_end_source - i_start_source))
-    #     target_slice_j = slice(j_start_target, j_start_target + (j_end_source - j_start_source))
-        
-    #     padded_probs[target_slice_i, target_slice_j] = self.water_probability[source_slice_i, source_slice_j]
-    #     padded_conf[target_slice_i, target_slice_j] = self.confidence_map[source_slice_i, source_slice_j]
-        
-    #     return padded_probs.flatten(), padded_conf.flatten()
-    
-    # def _get_cardinal_averages(self, center_i, center_j, local_size=2):
-    #     """
-    #     Optimized calculation of average probabilities in each cardinal direction.
-    #     """
-    #     # Initialize counters and sums
-    #     directions = {
-    #         'north': {'sum': 0.0, 'count': 0},
-    #         'south': {'sum': 0.0, 'count': 0},
-    #         'east': {'sum': 0.0, 'count': 0},
-    #         'west': {'sum': 0.0, 'count': 0}
-    #     }
-        
-    #     # Calculate local view bounds to exclude
-    #     local_min_i = max(0, center_i - local_size)
-    #     local_max_i = min(self.grid_height - 1, center_i + local_size)
-    #     local_min_j = max(0, center_j - local_size)
-    #     local_max_j = min(self.grid_width - 1, center_j + local_size)
-        
-    #     # Process rows above center (north)
-    #     if center_i > 0:
-    #         north_slice = self.water_probability[0:local_min_i, :]
-    #         directions['north']['sum'] = np.sum(north_slice)
-    #         directions['north']['count'] = north_slice.size
-        
-    #     # Process rows below center (south)
-    #     if center_i < self.grid_height - 1:
-    #         south_slice = self.water_probability[local_max_i+1:, :]
-    #         directions['south']['sum'] = np.sum(south_slice)
-    #         directions['south']['count'] = south_slice.size
-        
-    #     # Process columns left of center (west)
-    #     if center_j > 0:
-    #         west_slice = self.water_probability[:, 0:local_min_j]
-    #         directions['west']['sum'] = np.sum(west_slice)
-    #         directions['west']['count'] = west_slice.size
-        
-    #     # Process columns right of center (east)
-    #     if center_j < self.grid_width - 1:
-    #         east_slice = self.water_probability[:, local_max_j+1:]
-    #         directions['east']['sum'] = np.sum(east_slice)
-    #         directions['east']['count'] = east_slice.size
-        
-    #     # Calculate averages
-    #     averages = np.zeros(4, dtype=np.float32)
-    #     for idx, direction in enumerate(['north', 'south', 'east', 'west']):
-    #         if directions[direction]['count'] > 0:
-    #             averages[idx] = directions[direction]['sum'] / directions[direction]['count']
-        
-    #     return averages
-    
     def _get_observation(self):
-        """Return the current observation as a dictionary matching self.observation_space."""
-        # Basic scalar observations
-        height = Utils.calculate_height(self.agent_pos, self.height_map)
+        """Return the current observation as a dictionary with normalized values."""
+        # Normalize heights
+        ring_heights = self._get_local_heights(self.agent_pos[0], self.agent_pos[1], size=2)
+        ring_heights = (ring_heights + 50) / 100  # Normalize to [0, 1]
+
+        # Normalize battery level
+        battery_level = np.array([self.current_bat_level / self.battery_capacity], dtype=np.float32)
+
+        # Normalize position
+        position = np.array([
+            self.agent_pos[0] / (self.grid_height - 1),
+            self.agent_pos[1] / (self.grid_width - 1)
+        ], dtype=np.float32)
+
+        # Sunlight is already normalized
         sunlight_map = Utils.calculate_sunlight_map(
             self.grid_height, self.grid_width, self.height_map, self.current_day
         )
         sunlight_level = Utils.calculate_sunlight_level(
             sunlight_map, self.agent_pos[0], self.agent_pos[1]
         )
+
+        # Normalize dust
         dust = Utils.calculate_dust(self.agent_pos, self.dust_map)
+        dust = np.array([dust * 2], dtype=np.float32)  # Normalize to [0, 1]
 
-        # New ring heights (5×5) around the agent
-        ring_heights = self._get_local_heights(self.agent_pos[0], self.agent_pos[1], size=2)
-
-        # Full water probability map, flattened
+        # Water probabilities are already normalized
         water_probs = self.water_probability.flatten()
 
         obs_dict = {
-            'ring_heights': ring_heights,  # shape (25,)
-
-            'battery': np.array([self.current_bat_level], dtype=np.float32),
-            'position': np.array(self.agent_pos, dtype=np.float32),
+            'ring_heights': ring_heights,
+            'battery': battery_level,
+            'position': position,
             'sunlight': np.array([sunlight_level], dtype=np.float32),
-            'dust': np.array([dust], dtype=np.float32),
-
-            'water_probs': water_probs,    # shape (35*35 = 1225,)
+            'dust': dust,
+            'water_probs': water_probs,
         }
 
         return obs_dict
