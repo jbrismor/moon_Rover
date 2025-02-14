@@ -156,7 +156,7 @@ def visualize_policy(checkpoint_dir, episodes=5, max_steps=360):
 
 if __name__ == "__main__":
     # Path to your final checkpoint
-    checkpoint_dir = "/home/billy/Documents/Georgetown/moon_Rover/checkpoints/sac_lunar_best"
+    checkpoint_dir = "/Users/jbm/Desktop/moon_Rover/checkpoints/sac_lunar_best"
     
     # Visualize with 5 episodes and 360 max steps
     visualize_policy(checkpoint_dir, episodes=5, max_steps=360)

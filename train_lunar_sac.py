@@ -36,13 +36,30 @@ from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
 
+# Add these near existing imports
+from ray.rllib.models import ModelCatalog
+from lunabot.geosearch import EnhancedGeosearchModel  # Ensure this import matches your project structure
+
+ModelCatalog.register_custom_model("geo_model", EnhancedGeosearchModel)
+
 class RLlibPolicyWrapper:
     """Wrapper for RLlib policies"""
     def __init__(self, algo):
         self.algo = algo
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-    
+        # Check for CUDA -> MPS -> CPU in priority order
+        self.device = "cuda" if torch.cuda.is_available() else \
+                    "mps" if torch.backends.mps.is_available() else "cpu"
+        
+        # Optional: Set MPS-specific flags
+        if self.device == "mps":
+            os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'  # Enable fallback ops
+            torch.mps.empty_cache()  # Clear memory cache
+            
     def get_action(self, state):
+        # Convert numpy arrays to tensors on the correct device
+        if isinstance(state, np.ndarray):
+            state = torch.from_numpy(state).to(self.device)
+            
         return self.algo.compute_single_action(
             observation=state,
             explore=False
@@ -69,20 +86,19 @@ logger.setLevel(logging.ERROR)
 
 @dataclass
 class TrainingConfig:
-    """Training configuration parameters"""
     iterations: int = 10500
-    eval_interval: int = 75
-    checkpoint_frequency: int = 3600  # 1 hour
-    early_stop_patience: int = 500
+    eval_interval: int = 50  # Changed from 75 to match custom config
+    checkpoint_frequency: int = 3600  
+    early_stop_patience: int = 5000
     early_stop_min_improvement: float = 0.01
     num_workers: int = 8
     num_eval_workers: int = 4
-    learning_rate: float = 5e-5
+    learning_rate: float = 3e-4  # Changed from 5e-5
     grad_clip: float = 0.25
     tau: float = 0.005
-    initial_alpha: float = 0.1
-    batch_size: int = 256
-    buffer_size: int = 200000
+    initial_alpha: float = 0.2  # Changed from 0.1
+    batch_size: int = 512  # Changed from 256
+    buffer_size: int = 500000  # Changed from 200k
     hidden_layers: List[int] = None
 
     def __post_init__(self):
@@ -108,7 +124,7 @@ class TrainingManager:
             os.makedirs(directory, exist_ok=True)
 
     def setup_sac_config(self) -> SACConfig:
-        """Configure SAC algorithm"""
+        """Configure SAC algorithm for EnhancedGeosearchModel"""
         # Register the environment with Ray
         from ray import tune
         tune.register_env(
@@ -129,30 +145,39 @@ class TrainingManager:
         # Resources
         config.num_workers = 8
         config.evaluation_num_env_runners = 4 
-        config.evaluation_interval = 75
+        config.evaluation_interval = 50  # Matches custom config
+        config.evaluation_duration = 30  # Added
         
         # Training parameters
         config.training(
-            lr=3e-4,  # Standard learning rate for SAC
-            grad_clip=1.0,
+            lr=3e-4,  # From custom config
             tau=0.005,
-            initial_alpha=1.0,
+            initial_alpha=0.2,  # Changed from 1.0
+            train_batch_size=512,  # Increased from 256
+            policy_model_config={
+                "custom_model": "geo_model",
+                "custom_action_dist": "categorical",
+            },
+            q_model_config={
+                "custom_model": "geo_model",
+                "custom_action_dist": "categorical",
+            },
             replay_buffer_config={
-                "type": "MultiAgentReplayBuffer",
-                "capacity": 100000,
+                "type": "ReplayBuffer",  # Changed from MultiAgentReplayBuffer
+                "capacity": 500000,  # Increased from 100k
+                "alpha": 0.6,
+                "beta": 0.4
             }
         )
         
         # Model configuration
         config.model = {
-            "fcnet_hiddens": [128, 128],
-            "fcnet_activation": "relu",
+            "_disable_preprocessor_api": True,  # Critical for dict observations
             "max_seq_len": 20
         }
         
         # Batch settings
-        config.rollout_fragment_length = 1
-        config.train_batch_size = 256
+        config.rollout_fragment_length = 200  # Increased from 1
         config.target_network_update_freq = 1
         
         return config
